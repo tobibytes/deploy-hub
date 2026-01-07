@@ -247,7 +247,7 @@ export default function Containers() {
     }, 2000);
   };
 
-  const updateContainerStatus = async (containerId: string, status: string) => {
+  const updateContainerStatus = async (containerId: string, status: 'pending' | 'building' | 'running' | 'stopped' | 'failed' | 'deploying') => {
     try {
       await supabase
         .from('containers')
