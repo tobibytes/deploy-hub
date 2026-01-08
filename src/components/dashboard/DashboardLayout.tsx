@@ -11,7 +11,8 @@ import {
   LogOut,
   Menu,
   X,
-  Activity
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,7 @@ const navItems = [
   { icon: Container, label: 'Containers', href: '/dashboard/containers' },
   { icon: Globe, label: 'Domains', href: '/dashboard/domains' },
   { icon: Activity, label: 'Deployments', href: '/dashboard/deployments' },
+  { icon: AlertCircle, label: 'Monitoring', href: '/dashboard/monitoring' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
 ];
 

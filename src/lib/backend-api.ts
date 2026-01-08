@@ -40,94 +40,102 @@ class BackendAPI {
     this.baseUrl = BACKEND_URL;
   }
 
-  async healthCheck(): Promise<{ status: string; message: string }> {
-    const response = await fetch(`${this.baseUrl}/api/health`);
+  private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
-      throw new Error('Backend server is not responding');
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch (e) {
+        // Response body is not JSON or empty
+      }
+
+      throw new Error(errorMessage);
     }
+
     return response.json();
+  }
+
+  private async makeRequest<T>(
+    url: string,
+    options?: RequestInit
+  ): Promise<T> {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+      });
+
+      return this.handleResponse<T>(response);
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error('Network error: Unable to connect to the backend server. Please ensure the server is running.');
+      }
+      throw error;
+    }
+  }
+
+  async healthCheck(): Promise<{ status: string; message: string }> {
+    return this.makeRequest(`${this.baseUrl}/api/health`);
   }
 
   async deployContainer(data: DeployContainerRequest): Promise<DeploymentResponse> {
-    const response = await fetch(`${this.baseUrl}/api/containers`, {
+    return this.makeRequest(`${this.baseUrl}/api/containers`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(data),
     });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Unknown error' }));
-      throw new Error(
-        `Failed to deploy container (HTTP ${response.status}): ${error.message || error.error || 'Unknown error'}`
-      );
-    }
-
-    return response.json();
   }
 
   async listContainers(): Promise<{ containers: ContainerResponse[] }> {
-    const response = await fetch(`${this.baseUrl}/api/containers`);
-    if (!response.ok) {
-      throw new Error('Failed to list containers');
-    }
-    return response.json();
+    return this.makeRequest(`${this.baseUrl}/api/containers`);
   }
 
   async getContainer(id: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/api/containers/${id}`);
-    if (!response.ok) {
-      throw new Error('Failed to get container details');
-    }
-    return response.json();
+    return this.makeRequest(`${this.baseUrl}/api/containers/${id}`);
   }
 
   async startContainer(id: string): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${this.baseUrl}/api/containers/${id}/start`, {
+    return this.makeRequest(`${this.baseUrl}/api/containers/${id}/start`, {
       method: 'POST',
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to start container');
-    }
-
-    return response.json();
   }
 
   async stopContainer(id: string): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${this.baseUrl}/api/containers/${id}/stop`, {
+    return this.makeRequest(`${this.baseUrl}/api/containers/${id}/stop`, {
       method: 'POST',
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to stop container');
-    }
-
-    return response.json();
   }
 
   async deleteContainer(id: string): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${this.baseUrl}/api/containers/${id}`, {
+    return this.makeRequest(`${this.baseUrl}/api/containers/${id}`, {
       method: 'DELETE',
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to delete container');
-    }
-
-    return response.json();
   }
 
   async getContainerLogs(id: string): Promise<{ logs: string }> {
-    const response = await fetch(`${this.baseUrl}/api/containers/${id}/logs`);
-    if (!response.ok) {
-      throw new Error('Failed to get container logs');
-    }
-    return response.json();
+    return this.makeRequest(`${this.baseUrl}/api/containers/${id}/logs`);
+  }
+
+  async getMonitoringLogs(limit?: number, level?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (level) params.append('level', level);
+    
+    return this.makeRequest(`${this.baseUrl}/api/monitoring/logs?${params.toString()}`);
+  }
+
+  async getMonitoringStats(): Promise<any> {
+    return this.makeRequest(`${this.baseUrl}/api/monitoring/stats`);
+  }
+
+  async clearMonitoringLogs(): Promise<any> {
+    return this.makeRequest(`${this.baseUrl}/api/monitoring/logs`, {
+      method: 'DELETE',
+    });
   }
 }
 

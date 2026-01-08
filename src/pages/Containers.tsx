@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import StatusBadge from '@/components/dashboard/StatusBadge';
 import { supabase } from '@/integrations/supabase/client';
 import { backendAPI } from '@/lib/backend-api';
+import { errorService } from '@/services/errorService';
 import { 
   Container, 
   Plus, 
@@ -108,10 +109,14 @@ export default function Containers() {
         .select('*, projects(id, name)')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        errorService.logError('Failed to fetch containers from database', error);
+        throw error;
+      }
       setContainers(data as unknown as ContainerData[]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching containers:', error);
+      errorService.logError('Error fetching containers', error);
       toast.error('Failed to load containers');
     } finally {
       setIsLoading(false);
@@ -125,10 +130,14 @@ export default function Containers() {
         .select('id, name')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        errorService.logError('Failed to fetch projects from database', error);
+        throw error;
+      }
       setProjects(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching projects:', error);
+      errorService.logError('Error fetching projects', error);
     }
   };
 
@@ -152,7 +161,10 @@ export default function Containers() {
         .select()
         .single();
 
-      if (projectError) throw projectError;
+      if (projectError) {
+        errorService.logError('Failed to create project', projectError);
+        throw projectError;
+      }
 
       // Update status in UI
       toast.info('Building and deploying container...');
@@ -165,6 +177,11 @@ export default function Containers() {
         containerPort: formData.containerPort ? parseInt(formData.containerPort) : undefined,
         cpuLimit: formData.cpuLimit,
         memoryLimit: formData.memoryLimit,
+      });
+
+      errorService.logInfo('Container deployed successfully', { 
+        containerId: deployment.containerId,
+        name: formData.name 
       });
 
       // Save container info to database
@@ -185,7 +202,10 @@ export default function Containers() {
         .select()
         .single();
 
-      if (containerError) throw containerError;
+      if (containerError) {
+        errorService.logError('Failed to save container to database', containerError);
+        throw containerError;
+      }
 
       // Create deployment record
       await supabase.from('deployments').insert({
@@ -236,6 +256,10 @@ export default function Containers() {
       fetchContainers();
     } catch (error: any) {
       console.error('Error creating container:', error);
+      errorService.logError('Failed to create container', error, { 
+        name: formData.name,
+        image: formData.image 
+      });
       toast.error(error.message || 'Failed to create container');
     } finally {
       setIsCreating(false);
@@ -245,13 +269,20 @@ export default function Containers() {
   const updateContainerStatus = async (containerId: string, action: 'start' | 'stop') => {
     try {
       // Find container by database ID
-      const { data: containerData } = await supabase
+      const { data: containerData, error: fetchError } = await supabase
         .from('containers')
         .select('docker_container_id, name')
         .eq('id', containerId)
         .single();
 
+      if (fetchError) {
+        errorService.logError('Failed to fetch container data', fetchError);
+        throw fetchError;
+      }
+
       if (!containerData || !containerData.docker_container_id) {
+        const error = new Error('Container not found or missing Docker ID');
+        errorService.logError('Container validation failed', error, { containerId });
         toast.error('Container not found or missing Docker ID');
         return;
       }
@@ -262,6 +293,7 @@ export default function Containers() {
           .from('containers')
           .update({ status: 'running' })
           .eq('id', containerId);
+        errorService.logInfo('Container started', { containerId, name: containerData.name });
         toast.success('Container started successfully');
       } else {
         await backendAPI.stopContainer(containerData.docker_container_id);
@@ -269,12 +301,14 @@ export default function Containers() {
           .from('containers')
           .update({ status: 'stopped' })
           .eq('id', containerId);
+        errorService.logInfo('Container stopped', { containerId, name: containerData.name });
         toast.success('Container stopped successfully');
       }
       
       fetchContainers();
     } catch (error: any) {
       console.error('Error updating container:', error);
+      errorService.logError(`Failed to ${action} container`, error, { containerId });
       toast.error(error.message || `Failed to ${action} container`);
     }
   };
@@ -282,13 +316,20 @@ export default function Containers() {
   const deleteContainer = async (containerId: string) => {
     try {
       // Find container by database ID
-      const { data: containerData } = await supabase
+      const { data: containerData, error: fetchError } = await supabase
         .from('containers')
         .select('docker_container_id, name')
         .eq('id', containerId)
         .single();
 
+      if (fetchError) {
+        errorService.logError('Failed to fetch container for deletion', fetchError);
+        throw fetchError;
+      }
+
       if (!containerData) {
+        const error = new Error('Container not found');
+        errorService.logError('Container not found for deletion', error, { containerId });
         toast.error('Container not found');
         return;
       }
@@ -297,21 +338,32 @@ export default function Containers() {
       if (containerData.docker_container_id) {
         try {
           await backendAPI.deleteContainer(containerData.docker_container_id);
-        } catch (error) {
+        } catch (error: any) {
           console.warn('Container may already be deleted from Docker:', error);
+          errorService.logWarning('Container already deleted from Docker', { 
+            containerId,
+            error: error.message 
+          });
         }
       }
 
       // Delete from database
-      await supabase
+      const { error: deleteError } = await supabase
         .from('containers')
         .delete()
         .eq('id', containerId);
       
+      if (deleteError) {
+        errorService.logError('Failed to delete container from database', deleteError);
+        throw deleteError;
+      }
+
+      errorService.logInfo('Container deleted', { containerId, name: containerData.name });
       fetchContainers();
       toast.success('Container deleted successfully');
     } catch (error: any) {
       console.error('Error deleting container:', error);
+      errorService.logError('Failed to delete container', error, { containerId });
       toast.error(error.message || 'Failed to delete container');
     }
   };
