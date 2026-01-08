@@ -128,7 +128,7 @@ export default function Domains() {
     }
 
     // Enhanced domain validation
-    const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
+    const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$/;
     const trimmedDomain = formData.domain.trim().toLowerCase();
     
     // Remove protocol if present

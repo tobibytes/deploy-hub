@@ -35,15 +35,20 @@ app.use(express.json({
 
 // Middleware to check Content-Type for POST/PUT/PATCH requests with body
 app.use((req, res, next) => {
-  if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.headers['content-length'] && parseInt(req.headers['content-length']) > 0) {
-    const contentType = req.get('Content-Type');
-    if (!contentType || !contentType.includes('application/json')) {
-      return res.status(400).json({
-        error: 'Content-Type must be application/json for requests with body',
-        statusCode: 400,
-        timestamp: new Date().toISOString(),
-        path: req.originalUrl,
-      });
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    const contentLength = req.headers['content-length'];
+    const hasBody = contentLength && !isNaN(parseInt(contentLength)) && parseInt(contentLength) > 0;
+    
+    if (hasBody) {
+      const contentType = req.get('Content-Type');
+      if (!contentType || !contentType.includes('application/json')) {
+        return res.status(400).json({
+          error: 'Content-Type must be application/json for requests with body',
+          statusCode: 400,
+          timestamp: new Date().toISOString(),
+          path: req.originalUrl,
+        });
+      }
     }
   }
   next();

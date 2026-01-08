@@ -142,21 +142,25 @@ export default function Containers() {
   };
 
   const createContainer = async () => {
-    // Validate required fields
-    if (!formData.name?.trim() || !formData.image?.trim() || !formData.projectName?.trim()) {
+    // Validate and trim required fields
+    const trimmedName = formData.name?.trim();
+    const trimmedImage = formData.image?.trim();
+    const trimmedProjectName = formData.projectName?.trim();
+    
+    if (!trimmedName || !trimmedImage || !trimmedProjectName) {
       toast.error('Please fill in all required fields');
       return;
     }
 
     // Validate container name format
     const nameRegex = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
-    if (!nameRegex.test(formData.name)) {
+    if (!nameRegex.test(trimmedName)) {
       toast.error('Container name must start with alphanumeric character and contain only letters, numbers, underscores, periods, and hyphens');
       return;
     }
 
     // Validate image format (basic check)
-    if (!formData.image.includes(':') && !formData.image.includes('/')) {
+    if (!trimmedImage.includes(':') && !trimmedImage.includes('/')) {
       toast.warning('Consider specifying an image tag (e.g., nginx:alpine)');
     }
 
@@ -200,8 +204,8 @@ export default function Containers() {
 
       // Deploy container using backend API
       const deployment = await backendAPI.deployContainer({
-        name: formData.name,
-        image: formData.image,
+        name: trimmedName,
+        image: trimmedImage,
         port: formData.port ? parseInt(formData.port) : undefined,
         containerPort: formData.containerPort ? parseInt(formData.containerPort) : undefined,
         cpuLimit: formData.cpuLimit,
@@ -217,8 +221,8 @@ export default function Containers() {
       const { data: container, error: containerError } = await supabase
         .from('containers')
         .insert({
-          name: formData.name,
-          image: formData.image,
+          name: trimmedName,
+          image: trimmedImage,
           project_id: project.id,
           user_id: user!.id,
           port: deployment.port,
