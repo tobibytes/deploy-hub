@@ -121,15 +121,32 @@ export default function Domains() {
   };
 
   const createDomain = async () => {
-    if (!formData.domain || !formData.containerId) {
+    // Validate required fields
+    if (!formData.domain?.trim() || !formData.containerId) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    // Basic domain validation
+    // Enhanced domain validation
     const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(formData.domain)) {
-      toast.error('Please enter a valid domain name');
+    const trimmedDomain = formData.domain.trim().toLowerCase();
+    
+    // Remove protocol if present
+    const cleanDomain = trimmedDomain.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    
+    if (!domainRegex.test(cleanDomain)) {
+      toast.error('Please enter a valid domain name (e.g., example.com)');
+      return;
+    }
+
+    // Check for common issues
+    if (cleanDomain.includes('/')) {
+      toast.error('Domain should not contain path. Enter just the domain name.');
+      return;
+    }
+
+    if (cleanDomain.split('.').length < 2) {
+      toast.error('Please enter a complete domain with TLD (e.g., example.com)');
       return;
     }
 
@@ -140,7 +157,7 @@ export default function Domains() {
       const { error } = await supabase
         .from('domains')
         .insert({
-          domain: formData.domain.toLowerCase(),
+          domain: cleanDomain,
           container_id: formData.containerId,
           user_id: user!.id,
           verification_token: verificationToken,
@@ -245,6 +262,9 @@ export default function Domains() {
                     value={formData.domain}
                     onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
                     className="bg-input font-mono"
+                    disabled={isCreating}
+                    required
+                    aria-label="Domain name"
                   />
                   <p className="text-xs text-muted-foreground">
                     Enter your domain without http:// or https://
@@ -255,8 +275,9 @@ export default function Domains() {
                   <Select
                     value={formData.containerId}
                     onValueChange={(value) => setFormData({ ...formData, containerId: value })}
+                    disabled={isCreating}
                   >
-                    <SelectTrigger className="bg-input">
+                    <SelectTrigger className="bg-input" aria-label="Select container">
                       <SelectValue placeholder="Select a container" />
                     </SelectTrigger>
                     <SelectContent>
