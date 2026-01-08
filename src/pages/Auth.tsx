@@ -138,7 +138,10 @@ export default function Auth() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
+                      disabled={isLoading}
+                      autoComplete="email"
                       className="bg-input border-border"
+                      aria-label="Email address"
                     />
                   </div>
                   <div className="space-y-2">
@@ -150,7 +153,10 @@ export default function Auth() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
+                      disabled={isLoading}
+                      autoComplete="current-password"
                       className="bg-input border-border"
+                      aria-label="Password"
                     />
                   </div>
                   <Button type="submit" className="w-full" variant="glow" disabled={isLoading}>
@@ -176,7 +182,10 @@ export default function Auth() {
                       placeholder="John Doe"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
+                      disabled={isLoading}
+                      autoComplete="name"
                       className="bg-input border-border"
+                      aria-label="Full name"
                     />
                   </div>
                   <div className="space-y-2">
@@ -188,7 +197,10 @@ export default function Auth() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
+                      disabled={isLoading}
+                      autoComplete="email"
                       className="bg-input border-border"
+                      aria-label="Email address"
                     />
                   </div>
                   <div className="space-y-2">
@@ -200,8 +212,14 @@ export default function Auth() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
+                      disabled={isLoading}
+                      autoComplete="new-password"
                       className="bg-input border-border"
+                      aria-label="Password (minimum 6 characters)"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Minimum 6 characters
+                    </p>
                   </div>
                   <Button type="submit" className="w-full" variant="glow" disabled={isLoading}>
                     {isLoading ? (

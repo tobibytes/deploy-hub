@@ -142,8 +142,41 @@ export default function Containers() {
   };
 
   const createContainer = async () => {
-    if (!formData.name || !formData.image || !formData.projectName) {
+    // Validate and trim required fields
+    const trimmedName = formData.name?.trim();
+    const trimmedImage = formData.image?.trim();
+    const trimmedProjectName = formData.projectName?.trim();
+    
+    if (!trimmedName || !trimmedImage || !trimmedProjectName) {
       toast.error('Please fill in all required fields');
+      return;
+    }
+
+    // Validate container name format
+    const nameRegex = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+    if (!nameRegex.test(trimmedName)) {
+      toast.error('Container name must start with alphanumeric character and contain only letters, numbers, underscores, periods, and hyphens');
+      return;
+    }
+
+    // Validate image format (basic check)
+    if (!trimmedImage.includes(':') && !trimmedImage.includes('/')) {
+      toast.warning('Consider specifying an image tag (e.g., nginx:alpine)');
+    }
+
+    // Validate port if provided
+    if (formData.port) {
+      const port = parseInt(formData.port);
+      if (isNaN(port) || port < 1 || port > 65535) {
+        toast.error('Port must be between 1 and 65535');
+        return;
+      }
+    }
+
+    // Validate container port
+    const containerPort = parseInt(formData.containerPort);
+    if (isNaN(containerPort) || containerPort < 1 || containerPort > 65535) {
+      toast.error('Container port must be between 1 and 65535');
       return;
     }
 
@@ -171,8 +204,8 @@ export default function Containers() {
 
       // Deploy container using backend API
       const deployment = await backendAPI.deployContainer({
-        name: formData.name,
-        image: formData.image,
+        name: trimmedName,
+        image: trimmedImage,
         port: formData.port ? parseInt(formData.port) : undefined,
         containerPort: formData.containerPort ? parseInt(formData.containerPort) : undefined,
         cpuLimit: formData.cpuLimit,
@@ -188,8 +221,8 @@ export default function Containers() {
       const { data: container, error: containerError } = await supabase
         .from('containers')
         .insert({
-          name: formData.name,
-          image: formData.image,
+          name: trimmedName,
+          image: trimmedImage,
           project_id: project.id,
           user_id: user!.id,
           port: deployment.port,
@@ -410,6 +443,9 @@ export default function Containers() {
                     value={formData.projectName}
                     onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
                     className="bg-input"
+                    disabled={isCreating}
+                    aria-label="Project name"
+                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -420,6 +456,8 @@ export default function Containers() {
                     value={formData.projectDescription}
                     onChange={(e) => setFormData({ ...formData, projectDescription: e.target.value })}
                     className="bg-input"
+                    disabled={isCreating}
+                    aria-label="Project description"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -431,7 +469,13 @@ export default function Containers() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       className="bg-input"
+                      disabled={isCreating}
+                      aria-label="Container name"
+                      required
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Alphanumeric, underscores, periods, hyphens
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="port">Host Port</Label>
@@ -442,6 +486,10 @@ export default function Containers() {
                       value={formData.port}
                       onChange={(e) => setFormData({ ...formData, port: e.target.value })}
                       className="bg-input"
+                      disabled={isCreating}
+                      min="1"
+                      max="65535"
+                      aria-label="Host port"
                     />
                     <p className="text-xs text-muted-foreground">Port on your machine (auto-assigned if empty)</p>
                   </div>
@@ -454,6 +502,9 @@ export default function Containers() {
                     value={formData.image}
                     onChange={(e) => setFormData({ ...formData, image: e.target.value })}
                     className="bg-input font-mono text-sm"
+                    disabled={isCreating}
+                    aria-label="Docker image"
+                    required
                   />
                   <p className="text-xs text-muted-foreground">
                     Examples: nginx:alpine, node:18-alpine, httpd:alpine
@@ -468,6 +519,10 @@ export default function Containers() {
                     value={formData.containerPort}
                     onChange={(e) => setFormData({ ...formData, containerPort: e.target.value })}
                     className="bg-input"
+                    disabled={isCreating}
+                    min="1"
+                    max="65535"
+                    aria-label="Container port"
                   />
                   <p className="text-xs text-muted-foreground">
                     Port inside the container (80 for nginx/apache, 3000 for node apps)
@@ -479,8 +534,9 @@ export default function Containers() {
                     <Select
                       value={formData.cpuLimit}
                       onValueChange={(value) => setFormData({ ...formData, cpuLimit: value })}
+                      disabled={isCreating}
                     >
-                      <SelectTrigger className="bg-input">
+                      <SelectTrigger className="bg-input" aria-label="CPU limit">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -496,8 +552,9 @@ export default function Containers() {
                     <Select
                       value={formData.memoryLimit}
                       onValueChange={(value) => setFormData({ ...formData, memoryLimit: value })}
+                      disabled={isCreating}
                     >
-                      <SelectTrigger className="bg-input">
+                      <SelectTrigger className="bg-input" aria-label="Memory limit">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
