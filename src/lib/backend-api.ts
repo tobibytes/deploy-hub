@@ -8,6 +8,8 @@ export interface DeployContainerRequest {
   cpuLimit?: string;
   memoryLimit?: string;
   envVars?: string[];
+  projectName?: string;
+  projectDescription?: string;
 }
 
 export interface ContainerResponse {
@@ -94,6 +96,10 @@ class BackendAPI {
     return this.makeRequest(`${this.baseUrl}/api/containers`);
   }
 
+  async listAppContainers(): Promise<{ containers: any[] }> {
+    return this.makeRequest(`${this.baseUrl}/api/app/containers`);
+  }
+
   async getContainer(id: string): Promise<any> {
     return this.makeRequest(`${this.baseUrl}/api/containers/${id}`);
   }
@@ -101,12 +107,14 @@ class BackendAPI {
   async startContainer(id: string): Promise<{ success: boolean; message: string }> {
     return this.makeRequest(`${this.baseUrl}/api/containers/${id}/start`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 
   async stopContainer(id: string): Promise<{ success: boolean; message: string }> {
     return this.makeRequest(`${this.baseUrl}/api/containers/${id}/stop`, {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 

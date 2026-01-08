@@ -5,8 +5,8 @@ import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/dashboard/StatusBadge';
-import { supabase } from '@/integrations/supabase/client';
 import { errorService } from '@/services/errorService';
+import { backendAPI } from '@/lib/backend-api';
 import { 
   Container, 
   Globe, 
@@ -63,45 +63,34 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch stats in parallel
-      const [containersResult, domainsResult, deploymentsResult] = await Promise.all([
-        supabase.from('containers').select('id, status'),
-        supabase.from('domains').select('id'),
-        supabase.from('deployments').select('id'),
-      ]);
-
-      if (containersResult.error) {
-        errorService.logError('Failed to fetch containers', containersResult.error);
-      }
-      if (domainsResult.error) {
-        errorService.logError('Failed to fetch domains', domainsResult.error);
-      }
-      if (deploymentsResult.error) {
-        errorService.logError('Failed to fetch deployments', deploymentsResult.error);
-      }
-
-      const containers = containersResult.data || [];
-      const running = containers.filter(c => c.status === 'running').length;
+      // Fetch containers from backend
+      const { containers } = await backendAPI.listAppContainers();
+      const running = containers.filter((c: any) => c.status === 'running').length;
 
       setStats({
         containers: containers.length,
         running,
-        domains: domainsResult.data?.length || 0,
-        deployments: deploymentsResult.data?.length || 0,
+        domains: 0,
+        deployments: 0,
       });
 
-      // Fetch recent containers with project info
-      const { data: recentData, error: recentError } = await supabase
-        .from('containers')
-        .select('id, name, image, status, project_id, projects(id, name, description, framework, created_at)')
-        .order('created_at', { ascending: false })
-        .limit(5);
+      // Map container data
+      const recentData = containers.slice(0, 5).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        image: c.image,
+        status: c.status,
+        project_id: c.project_id,
+        projects: {
+          id: c.project_id,
+          name: c.project_name,
+          description: null,
+          framework: 'docker',
+          created_at: c.created_at
+        }
+      }));
 
-      if (recentError) {
-        errorService.logError('Failed to fetch recent containers', recentError);
-      } else if (recentData) {
-        setRecentContainers(recentData as unknown as ContainerData[]);
-      }
+      setRecentContainers(recentData as unknown as ContainerData[]);
     } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
       errorService.logError('Error fetching dashboard data', error);

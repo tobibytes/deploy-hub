@@ -5,7 +5,6 @@ import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/dashboard/StatusBadge';
-import { supabase } from '@/integrations/supabase/client';
 import { errorService } from '@/services/errorService';
 import { 
   Activity, 
@@ -59,16 +58,8 @@ export default function Deployments() {
 
   const fetchDeployments = async () => {
     try {
-      const { data, error } = await supabase
-        .from('deployments')
-        .select('*, containers(name, image, projects(name))')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        errorService.logError('Failed to fetch deployments', error);
-        throw error;
-      }
-      setDeployments(data as unknown as DeploymentData[]);
+      // No deployments backend endpoint yet; show empty
+      setDeployments([]);
     } catch (error: any) {
       console.error('Error fetching deployments:', error);
       errorService.logError('Error fetching deployments', error);

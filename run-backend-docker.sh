@@ -16,11 +16,28 @@ echo "🔵 Stopping any existing backend container..."
 docker stop deploy-hub-backend-container 2>/dev/null || true
 docker rm deploy-hub-backend-container 2>/dev/null || true
 
+echo "🔵 Running database migrations..."
+if [ -f .env ]; then
+  echo "📄 Found .env file, loading environment variables..."
+  bash ./run-migrations.sh
+else
+  echo "⚠️  No .env file found. Skipping migrations."
+fi
+
 echo "🚀 Starting backend in Docker container..."
+
+# Check if .env file exists and add it to the docker run command
+ENV_FILE_ARG=""
+if [ -f .env ]; then
+  echo "📄 Found .env file, loading environment variables..."
+  ENV_FILE_ARG="--env-file .env"
+fi
+
 docker run -d \
   --name deploy-hub-backend-container \
   -p 3001:3001 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  $ENV_FILE_ARG \
   --restart unless-stopped \
   deploy-hub-backend
 

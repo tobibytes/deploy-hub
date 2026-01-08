@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
 import { 
   Globe, 
   Plus, 
@@ -87,13 +86,8 @@ export default function Domains() {
 
   const fetchDomains = async () => {
     try {
-      const { data, error } = await supabase
-        .from('domains')
-        .select('*, containers(name, status)')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setDomains(data as unknown as DomainData[]);
+      // No domains backend endpoint yet; show empty
+      setDomains([]);
     } catch (error) {
       console.error('Error fetching domains:', error);
       toast.error('Failed to load domains');
@@ -104,13 +98,8 @@ export default function Domains() {
 
   const fetchContainers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('containers')
-        .select('id, name, status')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setContainers(data || []);
+      // Show empty for now
+      setContainers([]);
     } catch (error) {
       console.error('Error fetching containers:', error);
     }
@@ -152,32 +141,9 @@ export default function Domains() {
 
     setIsCreating(true);
     try {
-      const verificationToken = generateVerificationToken();
-
-      const { error } = await supabase
-        .from('domains')
-        .insert({
-          domain: cleanDomain,
-          container_id: formData.containerId,
-          user_id: user!.id,
-          verification_token: verificationToken,
-          is_verified: false,
-          ssl_enabled: false,
-        });
-
-      if (error) {
-        if (error.code === '23505') {
-          toast.error('This domain is already registered');
-        } else {
-          throw error;
-        }
-        return;
-      }
-
-      toast.success('Domain added successfully!');
-      setDialogOpen(false);
-      setFormData({ domain: '', containerId: '' });
-      fetchDomains();
+      // No domains backend endpoint yet
+      toast.info('Domains feature coming soon');
+      setIsCreating(false);
     } catch (error: any) {
       console.error('Error creating domain:', error);
       toast.error(error.message || 'Failed to add domain');
@@ -188,14 +154,8 @@ export default function Domains() {
 
   const verifyDomain = async (domainId: string) => {
     try {
-      // Simulate verification (in real app, this would check DNS records)
-      await supabase
-        .from('domains')
-        .update({ is_verified: true, ssl_enabled: true })
-        .eq('id', domainId);
-
-      toast.success('Domain verified and SSL enabled!');
-      fetchDomains();
+      // No domains backend endpoint yet
+      toast.info('Domain verification coming soon');
     } catch (error) {
       toast.error('Failed to verify domain');
     }
@@ -203,13 +163,8 @@ export default function Domains() {
 
   const deleteDomain = async (domainId: string) => {
     try {
-      await supabase
-        .from('domains')
-        .delete()
-        .eq('id', domainId);
-      
-      fetchDomains();
-      toast.success('Domain deleted');
+      // No domains backend endpoint yet
+      toast.info('Domain deletion coming soon');
     } catch (error) {
       toast.error('Failed to delete domain');
     }

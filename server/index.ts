@@ -3,6 +3,7 @@ import cors from 'cors';
 import Docker from 'dockerode';
 import getPort from 'get-port';
 import { errorHandler, notFoundHandler, asyncHandler, AppError } from './middleware/errorHandler';
+import { query } from './db';
 import { validateDeployContainer, validateContainerId } from './middleware/validation';
 import { logger } from './services/logger';
 
@@ -149,9 +150,9 @@ app.get('/api/containers/:id', validateContainerId, asyncHandler(async (req: Req
   }
 }));
 
-// Deploy a new container
+// Deploy a new container (also persists to database)
 app.post('/api/containers', validateDeployContainer, asyncHandler(async (req: Request, res: Response) => {
-  const { name, image, port: requestedPort, containerPort: requestedContainerPort, cpuLimit, memoryLimit, envVars } = req.body;
+  const { name, image, port: requestedPort, containerPort: requestedContainerPort, cpuLimit, memoryLimit, envVars, projectName, projectDescription } = req.body;
   
   logger.info('Deploying new container', { name, image });
 
@@ -249,6 +250,46 @@ app.post('/api/containers', validateDeployContainer, asyncHandler(async (req: Re
   
   containerMetadata.set(container.id, metadata);
 
+  // Persist to database (best-effort)
+  try {
+    const defaultUserId = process.env.DEPLOY_DEFAULT_USER_ID || '00000000-0000-0000-0000-000000000000';
+    // Upsert project by name for this user
+    const projectResult = await query<{ id: string }>(
+      `INSERT INTO deploy_projects (user_id, name, description, framework)
+       VALUES ($1, $2, $3, 'docker')
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id`,
+      [defaultUserId, projectName || name, projectDescription || null]
+    ).catch(async (e) => {
+      // If above fails due to unique constraints not matching, try to find by name
+      const existing = await query<{ id: string }>(`SELECT id FROM deploy_projects WHERE user_id = $1 AND name = $2 LIMIT 1`, [defaultUserId, projectName || name]);
+      return { rows: existing.rows } as any;
+    });
+    const projectId = projectResult.rows[0]?.id || (
+      await query<{ id: string }>(`SELECT id FROM deploy_projects WHERE user_id = $1 AND name = $2 LIMIT 1`, [defaultUserId, projectName || name])
+    ).rows[0]?.id;
+
+    await query(
+      `INSERT INTO deploy_containers (
+        project_id, user_id, name, image, status, port, docker_container_id, local_url, cpu_limit, memory_limit
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [projectId, defaultUserId, name, image, 'running', hostPort, container.id, localUrl, cpuLimit || '0.5', memoryLimit || '512Mi']
+    );
+
+    await query(
+      `INSERT INTO deploy_deployments (container_id, user_id, status, finished_at)
+       VALUES (
+         (SELECT id FROM deploy_containers WHERE docker_container_id = $1 LIMIT 1),
+         $2,
+         'success',
+         now()
+       )`,
+      [container.id, defaultUserId]
+    );
+  } catch (dbErr: any) {
+    logger.warn('Failed to persist container metadata to DB', { error: dbErr?.message });
+  }
+
   logger.info(`Container ${name} deployed successfully`, { containerId: container.id, localUrl });
 
   res.json({
@@ -276,6 +317,10 @@ app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (r
       containerMetadata.set(req.params.id, meta);
     }
     
+    // Update DB status
+    try {
+      await query(`UPDATE deploy_containers SET status = 'running', updated_at = now() WHERE docker_container_id = $1`, [req.params.id]);
+    } catch {}
     logger.info('Container started', { containerId: req.params.id });
     res.json({ success: true, message: 'Container started successfully' });
   } catch (error: any) {
@@ -303,6 +348,10 @@ app.post('/api/containers/:id/stop', validateContainerId, asyncHandler(async (re
       containerMetadata.set(req.params.id, meta);
     }
     
+    // Update DB status
+    try {
+      await query(`UPDATE deploy_containers SET status = 'stopped', updated_at = now() WHERE docker_container_id = $1`, [req.params.id]);
+    } catch {}
     logger.info('Container stopped', { containerId: req.params.id });
     res.json({ success: true, message: 'Container stopped successfully' });
   } catch (error: any) {
@@ -335,8 +384,11 @@ app.delete('/api/containers/:id', validateContainerId, asyncHandler(async (req: 
     // Remove the container
     await container.remove();
     
-    // Remove metadata
+    // Remove metadata and DB record
     containerMetadata.delete(req.params.id);
+    try {
+      await query(`DELETE FROM deploy_containers WHERE docker_container_id = $1`, [req.params.id]);
+    } catch {}
     
     logger.info('Container deleted', { containerId: req.params.id });
     res.json({ success: true, message: 'Container deleted successfully' });
@@ -346,6 +398,33 @@ app.delete('/api/containers/:id', validateContainerId, asyncHandler(async (req: 
       throw new AppError(`Container not found: ${req.params.id}`, 404);
     }
     throw new AppError(`Failed to delete container: ${error.message}`, 500);
+  }
+}));
+
+// Application containers listing from DB (joined with project)
+app.get('/api/app/containers', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT c.id,
+              c.docker_container_id,
+              c.name,
+              c.image,
+              c.status,
+              c.port,
+              c.local_url,
+              c.cpu_limit,
+              c.memory_limit,
+              c.project_id,
+              c.created_at,
+              p.name as project_name
+       FROM deploy_containers c
+       LEFT JOIN deploy_projects p ON p.id = c.project_id
+       ORDER BY c.created_at DESC`
+    );
+    res.json({ containers: result.rows });
+  } catch (error: any) {
+    logger.error('Failed to fetch app containers from DB', { error: error?.message });
+    throw new AppError('Failed to fetch containers', 500);
   }
 }));
 

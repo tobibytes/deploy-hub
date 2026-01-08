@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import StatusBadge from '@/components/dashboard/StatusBadge';
-import { supabase } from '@/integrations/supabase/client';
+// Supabase removed; data now comes from backend APIs
 import { backendAPI } from '@/lib/backend-api';
 import { errorService } from '@/services/errorService';
 import { 
@@ -56,26 +55,31 @@ interface Project {
 interface ContainerData {
   id: string;
   containerId?: string;
+  docker_container_id?: string;
   name: string;
   image: string;
   status: 'pending' | 'building' | 'running' | 'stopped' | 'failed' | 'deploying' | 'exited' | 'created';
   port: number | null;
+  local_url?: string;
   localUrl?: string;
   cpu_limit: string | null;
   memory_limit: string | null;
   project_id: string;
   created_at: string;
   projects: Project;
+  environment_variables?: Record<string, string>;
 }
 
 export default function Containers() {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [containers, setContainers] = useState<ContainerData[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedContainer, setSelectedContainer] = useState<ContainerData | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [stoppingContainerId, setStoppingContainerId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -83,37 +87,40 @@ export default function Containers() {
     image: '',
     projectName: '',
     projectDescription: '',
-    port: '',
     containerPort: '80',
     cpuLimit: '0.5',
     memoryLimit: '512Mi',
   });
 
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate('/auth');
-    }
-  }, [user, loading, navigate]);
+  // Auth optional; do not redirect when unauthenticated
+  useEffect(() => {}, []);
 
   useEffect(() => {
-    if (user) {
-      fetchContainers();
-      fetchProjects();
-    }
-  }, [user]);
+    fetchContainers();
+  }, []);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [containers]);
 
   const fetchContainers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('containers')
-        .select('*, projects(id, name)')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        errorService.logError('Failed to fetch containers from database', error);
-        throw error;
-      }
-      setContainers(data as unknown as ContainerData[]);
+      const { containers } = await backendAPI.listAppContainers();
+      const mapped = containers.map((c: any) => ({
+        id: c.id,
+        docker_container_id: c.docker_container_id,
+        name: c.name,
+        image: c.image,
+        status: c.status,
+        port: c.port,
+        localUrl: c.local_url,
+        cpu_limit: c.cpu_limit,
+        memory_limit: c.memory_limit,
+        project_id: c.project_id,
+        created_at: c.created_at,
+        projects: { id: c.project_id, name: c.project_name }
+      }));
+      setContainers(mapped);
     } catch (error: any) {
       console.error('Error fetching containers:', error);
       errorService.logError('Error fetching containers', error);
@@ -124,21 +131,26 @@ export default function Containers() {
   };
 
   const fetchProjects = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id, name')
-        .order('created_at', { ascending: false });
+    const unique = Array.from(new Map(containers.map(c => [c.projects?.id, c.projects])).values()).filter(Boolean) as Project[];
+    setProjects(unique);
+  };
 
-      if (error) {
-        errorService.logError('Failed to fetch projects from database', error);
-        throw error;
-      }
-      setProjects(data || []);
-    } catch (error: any) {
-      console.error('Error fetching projects:', error);
-      errorService.logError('Error fetching projects', error);
+  const generateUniqueName = async (baseName: string): Promise<string> => {
+    const existingNames = new Set((containers || []).map((c: any) => c.name));
+    
+    if (!existingNames.has(baseName)) {
+      return baseName;
     }
+
+    // Generate unique name by appending number
+    let counter = 1;
+    let newName = `${baseName}-${counter}`;
+    while (existingNames.has(newName)) {
+      counter++;
+      newName = `${baseName}-${counter}`;
+    }
+    
+    return newName;
   };
 
   const createContainer = async () => {
@@ -164,15 +176,6 @@ export default function Containers() {
       toast.warning('Consider specifying an image tag (e.g., nginx:alpine)');
     }
 
-    // Validate port if provided
-    if (formData.port) {
-      const port = parseInt(formData.port);
-      if (isNaN(port) || port < 1 || port > 65535) {
-        toast.error('Port must be between 1 and 65535');
-        return;
-      }
-    }
-
     // Validate container port
     const containerPort = parseInt(formData.containerPort);
     if (isNaN(containerPort) || containerPort < 1 || containerPort > 65535) {
@@ -182,80 +185,37 @@ export default function Containers() {
 
     setIsCreating(true);
     try {
-      // Create project first in database
-      const { data: project, error: projectError } = await supabase
-        .from('projects')
-        .insert({
-          name: formData.projectName,
-          description: formData.projectDescription || null,
-          user_id: user!.id,
-          framework: 'docker',
-        })
-        .select()
-        .single();
-
-      if (projectError) {
-        errorService.logError('Failed to create project', projectError);
-        throw projectError;
+      // Generate unique name if duplicate exists
+      const uniqueName = await generateUniqueName(trimmedName);
+      if (uniqueName !== trimmedName) {
+        toast.info(`Name already exists. Using "${uniqueName}" instead.`);
       }
+
+      // Project creation handled on backend
 
       // Update status in UI
       toast.info('Building and deploying container...');
 
       // Deploy container using backend API
       const deployment = await backendAPI.deployContainer({
-        name: trimmedName,
+        name: uniqueName,
         image: trimmedImage,
-        port: formData.port ? parseInt(formData.port) : undefined,
         containerPort: formData.containerPort ? parseInt(formData.containerPort) : undefined,
         cpuLimit: formData.cpuLimit,
         memoryLimit: formData.memoryLimit,
+        projectName: formData.projectName,
+        projectDescription: formData.projectDescription,
       });
 
       errorService.logInfo('Container deployed successfully', { 
         containerId: deployment.containerId,
-        name: formData.name 
+        name: uniqueName 
       });
 
-      // Save container info to database
-      const { data: container, error: containerError } = await supabase
-        .from('containers')
-        .insert({
-          name: trimmedName,
-          image: trimmedImage,
-          project_id: project.id,
-          user_id: user!.id,
-          port: deployment.port,
-          docker_container_id: deployment.containerId,
-          local_url: deployment.localUrl,
-          cpu_limit: formData.cpuLimit,
-          memory_limit: formData.memoryLimit,
-          status: 'running',
-        })
-        .select()
-        .single();
-
-      if (containerError) {
-        errorService.logError('Failed to save container to database', containerError);
-        throw containerError;
-      }
+      // Persistence handled by backend
 
       // Create deployment record
-      await supabase.from('deployments').insert({
-        container_id: container.id,
-        user_id: user!.id,
-        status: 'success',
-        finished_at: new Date().toISOString(),
-        logs: [
-          'Deployment initiated...',
-          'Pulling Docker image...',
-          'Image pulled successfully',
-          'Creating container...',
-          'Container created successfully',
-          'Starting container...',
-          `Container is now running at ${deployment.localUrl}`,
-        ],
-      });
+      await fetchContainers();
 
       toast.success(
         <div>
@@ -280,7 +240,6 @@ export default function Containers() {
         image: '',
         projectName: '',
         projectDescription: '',
-        port: '',
         containerPort: '80',
         cpuLimit: '0.5',
         memoryLimit: '512Mi',
@@ -301,17 +260,7 @@ export default function Containers() {
 
   const updateContainerStatus = async (containerId: string, action: 'start' | 'stop') => {
     try {
-      // Find container by database ID
-      const { data: containerData, error: fetchError } = await supabase
-        .from('containers')
-        .select('docker_container_id, name')
-        .eq('id', containerId)
-        .single();
-
-      if (fetchError) {
-        errorService.logError('Failed to fetch container data', fetchError);
-        throw fetchError;
-      }
+      const containerData = containers.find(c => c.id === containerId);
 
       if (!containerData || !containerData.docker_container_id) {
         const error = new Error('Container not found or missing Docker ID');
@@ -321,44 +270,35 @@ export default function Containers() {
       }
 
       if (action === 'start') {
-        await backendAPI.startContainer(containerData.docker_container_id);
-        await supabase
-          .from('containers')
-          .update({ status: 'running' })
-          .eq('id', containerId);
+        await backendAPI.startContainer(containerData.docker_container_id!);
         errorService.logInfo('Container started', { containerId, name: containerData.name });
         toast.success('Container started successfully');
       } else {
-        await backendAPI.stopContainer(containerData.docker_container_id);
-        await supabase
-          .from('containers')
-          .update({ status: 'stopped' })
-          .eq('id', containerId);
+        await backendAPI.stopContainer(containerData.docker_container_id!);
         errorService.logInfo('Container stopped', { containerId, name: containerData.name });
         toast.success('Container stopped successfully');
       }
       
+      // Update local state and refresh UI
+      setStoppingContainerId(null);
+      if (selectedContainer?.id === containerId) {
+        setSelectedContainer({
+          ...selectedContainer,
+          status: action === 'start' ? 'running' : 'stopped'
+        });
+      }
       fetchContainers();
     } catch (error: any) {
       console.error('Error updating container:', error);
       errorService.logError(`Failed to ${action} container`, error, { containerId });
+      setStoppingContainerId(null);
       toast.error(error.message || `Failed to ${action} container`);
     }
   };
 
   const deleteContainer = async (containerId: string) => {
     try {
-      // Find container by database ID
-      const { data: containerData, error: fetchError } = await supabase
-        .from('containers')
-        .select('docker_container_id, name')
-        .eq('id', containerId)
-        .single();
-
-      if (fetchError) {
-        errorService.logError('Failed to fetch container for deletion', fetchError);
-        throw fetchError;
-      }
+      const containerData = containers.find(c => c.id === containerId);
 
       if (!containerData) {
         const error = new Error('Container not found');
@@ -380,16 +320,7 @@ export default function Containers() {
         }
       }
 
-      // Delete from database
-      const { error: deleteError } = await supabase
-        .from('containers')
-        .delete()
-        .eq('id', containerId);
-      
-      if (deleteError) {
-        errorService.logError('Failed to delete container from database', deleteError);
-        throw deleteError;
-      }
+      // Backend deletes from DB as well
 
       errorService.logInfo('Container deleted', { containerId, name: containerData.name });
       fetchContainers();
@@ -401,13 +332,7 @@ export default function Containers() {
     }
   };
 
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Do not gate UI behind auth; backend handles ownership
 
   return (
     <DashboardLayout>
@@ -427,14 +352,14 @@ export default function Containers() {
                 New Container
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg glass-strong">
+            <DialogContent className="sm:max-w-lg glass-strong flex flex-col max-h-[90vh]">
               <DialogHeader>
                 <DialogTitle>Create Container</DialogTitle>
                 <DialogDescription>
                   Deploy a new Docker container to the cloud
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 mt-4">
+              <div className="space-y-4 overflow-y-auto pr-4">
                 <div className="space-y-2">
                   <Label htmlFor="projectName">Project Name *</Label>
                   <Input
@@ -460,8 +385,7 @@ export default function Containers() {
                     aria-label="Project description"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="name">Container Name *</Label>
                     <Input
                       id="name"
@@ -477,23 +401,6 @@ export default function Containers() {
                       Alphanumeric, underscores, periods, hyphens
                     </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="port">Host Port</Label>
-                    <Input
-                      id="port"
-                      type="number"
-                      placeholder="Auto (8080-8999)"
-                      value={formData.port}
-                      onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-                      className="bg-input"
-                      disabled={isCreating}
-                      min="1"
-                      max="65535"
-                      aria-label="Host port"
-                    />
-                    <p className="text-xs text-muted-foreground">Port on your machine (auto-assigned if empty)</p>
-                  </div>
-                </div>
                 <div className="space-y-2">
                   <Label htmlFor="image">Docker Image *</Label>
                   <Input
@@ -611,9 +518,16 @@ export default function Containers() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {containers.map((container) => (
-              <Card key={container.id} className="glass border-border/50 hover:border-primary/30 transition-all">
+              <Card 
+                key={container.id} 
+                className="glass border-border/50 hover:border-primary/30 transition-all cursor-pointer"
+                onClick={() => {
+                  setSelectedContainer(container);
+                  setDetailsOpen(true);
+                }}
+              >
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-primary/10">
                         <Container className="h-5 w-5 text-primary" />
@@ -653,7 +567,7 @@ export default function Containers() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <StatusBadge status={container.status} />
@@ -668,19 +582,45 @@ export default function Containers() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => updateContainerStatus(container.id, 'stop')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateContainerStatus(container.id, 'stop');
+                            }}
+                            disabled={stoppingContainerId === container.id}
                           >
-                            <Square className="h-3 w-3 mr-1" />
-                            Stop
+                            {stoppingContainerId === container.id ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Stopping...
+                              </>
+                            ) : (
+                              <>
+                                <Square className="h-3 w-3 mr-1" />
+                                Stop
+                              </>
+                            )}
                           </Button>
                         ) : container.status === 'stopped' || container.status === 'exited' ? (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => updateContainerStatus(container.id, 'start')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateContainerStatus(container.id, 'start');
+                            }}
+                            disabled={stoppingContainerId === container.id}
                           >
-                            <Play className="h-3 w-3 mr-1" />
-                            Start
+                            {stoppingContainerId === container.id ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Starting...
+                              </>
+                            ) : (
+                              <>
+                                <Play className="h-3 w-3 mr-1" />
+                                Start
+                              </>
+                            )}
                           </Button>
                         ) : (
                           <Button variant="outline" size="sm" disabled>
@@ -717,6 +657,174 @@ export default function Containers() {
           </div>
         )}
       </div>
+
+      {/* Container Details Dialog */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="sm:max-w-xl glass-strong">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Container className="h-5 w-5 text-primary" />
+              {selectedContainer?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Container details and management
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedContainer && (
+            <div className="space-y-6 mt-6">
+              {/* Status Section */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm">Status</h3>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={selectedContainer.status} />
+                  <div className="flex items-center gap-2">
+                    {selectedContainer.status === 'running' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => updateContainerStatus(selectedContainer.id, 'stop')}
+                        disabled={stoppingContainerId === selectedContainer.id}
+                      >
+                        {stoppingContainerId === selectedContainer.id ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Stopping...
+                          </>
+                        ) : (
+                          <>
+                            <Square className="h-3 w-3 mr-1" />
+                            Stop
+                          </>
+                        )}
+                      </Button>
+                    ) : (selectedContainer.status === 'stopped' || selectedContainer.status === 'exited') ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => updateContainerStatus(selectedContainer.id, 'start')}
+                        disabled={stoppingContainerId === selectedContainer.id}
+                      >
+                        {stoppingContainerId === selectedContainer.id ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Starting...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-3 w-3 mr-1" />
+                            Start
+                          </>
+                        )}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              {/* Image and Port Section */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Image</p>
+                  <p className="font-mono text-sm break-all">{selectedContainer.image}</p>
+                </div>
+                {selectedContainer.port && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground">Port</p>
+                    <p className="font-mono text-sm">{selectedContainer.port}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Resources Section */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">CPU Limit</p>
+                  <p className="text-sm">{selectedContainer.cpu_limit} vCPU</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Memory Limit</p>
+                  <p className="text-sm">{selectedContainer.memory_limit}</p>
+                </div>
+              </div>
+
+              {/* Project Section */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">Project</p>
+                <p className="text-sm">{selectedContainer.projects?.name}</p>
+              </div>
+
+              {/* URL Section */}
+              {selectedContainer.localUrl && selectedContainer.status === 'running' && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Access URL</p>
+                  <a 
+                    href={selectedContainer.localUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline font-mono flex items-center gap-2 p-2 bg-primary/5 rounded-md border border-primary/20"
+                  >
+                    {selectedContainer.localUrl}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* Docker Container ID Section */}
+              {selectedContainer.docker_container_id && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Docker Container ID</p>
+                  <p className="font-mono text-xs text-muted-foreground break-all">{selectedContainer.docker_container_id}</p>
+                </div>
+              )}
+
+              {/* Created At Section */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">Created</p>
+                <p className="text-sm">{new Date(selectedContainer.created_at).toLocaleString()}</p>
+              </div>
+
+              {/* Environment Variables Section */}
+              {selectedContainer.environment_variables && Object.keys(selectedContainer.environment_variables).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Environment Variables</p>
+                  <div className="bg-secondary/30 rounded-md p-3 space-y-1 max-h-40 overflow-auto">
+                    {Object.entries(selectedContainer.environment_variables).map(([key, value]) => (
+                      <div key={key} className="text-xs font-mono">
+                        <span className="text-primary">{key}</span>
+                        <span className="text-muted-foreground">=</span>
+                        <span className="text-green-400">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-3 mt-6 pt-4 border-t border-border">
+            <Button 
+              variant="outline" 
+              onClick={() => navigate('/dashboard/domains')}
+              className="flex-1"
+            >
+              <Globe className="h-4 w-4 mr-2" />
+              Add Domain
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => {
+                setDetailsOpen(false);
+                deleteContainer(selectedContainer!.id);
+              }}
+              className="flex-1"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
