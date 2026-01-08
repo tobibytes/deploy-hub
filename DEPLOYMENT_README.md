@@ -211,3 +211,37 @@ This project is licensed under the MIT License.
 - [ ] Webhook integrations
 - [ ] Multi-user support with RBAC
 - [ ] Container backups and snapshots
+
+## Production Considerations
+
+This implementation is designed for **local development and testing**. For production deployment, consider:
+
+1. **State Persistence**
+   - The backend currently uses in-memory storage for container metadata
+   - Implement database persistence or sync with Supabase on startup
+   - Add state recovery mechanism after server restarts
+
+2. **Security**
+   - Implement proper authentication and authorization
+   - Sanitize error messages to avoid leaking internal details
+   - Use environment variables for sensitive configuration
+   - Implement rate limiting on API endpoints
+
+3. **Scalability**
+   - Consider Docker Swarm or Kubernetes for multi-host orchestration
+   - Implement container health checks and auto-recovery
+   - Add load balancing for multiple instances
+
+4. **Monitoring**
+   - Add logging infrastructure (e.g., Winston, Pino)
+   - Implement metrics collection (CPU, memory, network)
+   - Set up alerting for container failures
+
+5. **Networking**
+   - Configure proper Docker networks for container isolation
+   - Implement reverse proxy (nginx, Traefik) for production
+   - Add SSL/TLS termination for HTTPS
+
+6. **Type Safety**
+   - Define proper TypeScript interfaces for all API responses
+   - Remove `any` types in favor of specific interfaces

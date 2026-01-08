@@ -12,8 +12,10 @@ app.use(cors());
 app.use(express.json());
 
 // Store container metadata (in production, this would be in a database)
-// NOTE: This in-memory store will be lost on server restart. In production,
-// this data should be persisted to the database or synced on startup.
+// NOTE: This in-memory store will be lost on server restart. In production:
+// 1. Sync with Supabase database on startup to restore state
+// 2. Or query Docker directly and update database accordingly
+// 3. Consider implementing a persistence layer or state recovery mechanism
 interface ContainerMetadata {
   containerId: string;
   name: string;
