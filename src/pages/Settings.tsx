@@ -7,6 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { errorService } from '@/services/errorService';
+import { backendAPI } from '@/lib/backend-api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { 
   User, 
   Key,
@@ -33,6 +42,13 @@ export default function Settings() {
     fullName: '',
     email: '',
   });
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -42,24 +58,14 @@ export default function Settings() {
 
   useEffect(() => {
     if (user) {
-      fetchProfile();
-    }
-  }, [user]);
-
-  const fetchProfile = async () => {
-    try {
-      // No auth backend; use default
+      // Use actual user data from auth context
       setFormData({
-        fullName: 'Default User',
-        email: 'user@deployhub.local',
+        fullName: user.fullName || '',
+        email: user.email || '',
       });
-    } catch (error: any) {
-      console.error('Error fetching profile:', error);
-      errorService.logError('Error fetching profile', error);
-    } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
   const updateProfile = async () => {
     setIsSaving(true);
@@ -73,6 +79,42 @@ export default function Settings() {
       toast.error(error.message || 'Failed to update profile');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const changePassword = async () => {
+    // Validation
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      toast.error('Please fill in all password fields');
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await backendAPI.changePassword(passwordData.currentPassword, passwordData.newPassword);
+      toast.success('Password changed successfully');
+      setShowPasswordDialog(false);
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      errorService.logError('Error changing password', error);
+      toast.error(error.message || 'Failed to change password');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -180,17 +222,14 @@ export default function Settings() {
                 <div>
                   <p className="font-medium">Password</p>
                   <p className="text-sm text-muted-foreground">
-                    Last changed: Never
+                    Change your account password
                   </p>
                 </div>
               </div>
-              <Button variant="outline" disabled>
+              <Button variant="outline" onClick={() => setShowPasswordDialog(true)}>
                 Change Password
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Password changes are coming soon
-            </p>
           </CardContent>
         </Card>
 
@@ -207,12 +246,89 @@ export default function Settings() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Member since</span>
-                <span>{new Date(user.created_at).toLocaleDateString()}</span>
+                <span>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</span>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Password Change Dialog */}
+      <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Enter your current password and choose a new one.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="currentPassword">Current Password</Label>
+              <Input
+                id="currentPassword"
+                type="password"
+                value={passwordData.currentPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                placeholder="Enter current password"
+                className="bg-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">New Password</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                value={passwordData.newPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                placeholder="Enter new password"
+                className="bg-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                value={passwordData.confirmPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                placeholder="Confirm new password"
+                className="bg-input"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPasswordDialog(false);
+                setPasswordData({
+                  currentPassword: '',
+                  newPassword: '',
+                  confirmPassword: '',
+                });
+              }}
+              disabled={isChangingPassword}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="glow"
+              onClick={changePassword}
+              disabled={isChangingPassword}
+            >
+              {isChangingPassword ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Changing...
+                </>
+              ) : (
+                'Change Password'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

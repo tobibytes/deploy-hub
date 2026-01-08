@@ -1,8 +1,13 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { backendAPI } from '@/lib/backend-api';
 import { errorService } from '@/services/errorService';
 
 interface User {
   id: string;
+  email: string;
+  fullName?: string;
+  createdAt?: string;
+  isAdmin?: boolean;
 }
 
 interface AuthContextType {
@@ -16,19 +21,46 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>({
-    id: import.meta.env.VITE_DEPLOY_DEFAULT_USER_ID || '00000000-0000-0000-0000-000000000000'
-  });
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Using default user; no auth backend
-    setLoading(false);
+    // Check if user is already logged in
+    const checkAuth = async () => {
+      const token = backendAPI.getAuthToken();
+      if (token) {
+        try {
+          const { user: userData } = await backendAPI.getCurrentUser();
+          setUser({
+            id: userData.id,
+            email: userData.email,
+            fullName: userData.fullName,
+            createdAt: userData.createdAt,
+            isAdmin: userData.isAdmin,
+          });
+        } catch (error) {
+          // Token is invalid or expired
+          backendAPI.signout();
+          setUser(null);
+        }
+      }
+      setLoading(false);
+    };
+
+    checkAuth();
   }, []);
 
   const signUp = async (email: string, password: string, fullName?: string) => {
     try {
-      errorService.logInfo('Sign up placeholder', { email, fullName });
+      const { user: userData } = await backendAPI.signup(email, password, fullName);
+      setUser({
+        id: userData.id,
+        email: userData.email,
+        fullName: userData.fullName,
+        createdAt: userData.createdAt,
+        isAdmin: userData.isAdmin,
+      });
+      errorService.logInfo('Sign up successful', { email });
       return { error: null };
     } catch (error: any) {
       errorService.logError('Sign up error', error, { email });
@@ -38,7 +70,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      errorService.logInfo('Sign in placeholder', { email });
+      const { user: userData } = await backendAPI.signin(email, password);
+      setUser({
+        id: userData.id,
+        email: userData.email,
+        fullName: userData.fullName,
+        createdAt: userData.createdAt,
+        isAdmin: userData.isAdmin,
+      });
+      errorService.logInfo('Sign in successful', { email });
       return { error: null };
     } catch (error: any) {
       errorService.logError('Sign in error', error, { email });
@@ -48,7 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      errorService.logInfo('Sign out placeholder');
+      backendAPI.signout();
+      setUser(null);
+      errorService.logInfo('Sign out successful');
     } catch (error: any) {
       errorService.logError('Sign out error', error);
       throw error;
@@ -69,3 +111,4 @@ export function useAuth() {
   }
   return context;
 }
+

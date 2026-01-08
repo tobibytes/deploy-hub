@@ -10,10 +10,10 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Containers from "./pages/Containers";
-import Domains from "./pages/Domains";
 import Deployments from "./pages/Deployments";
 import Settings from "./pages/Settings";
 import Monitoring from "./pages/Monitoring";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -41,10 +41,10 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/dashboard/containers" element={<Containers />} />
-              <Route path="/dashboard/domains" element={<Domains />} />
               <Route path="/dashboard/deployments" element={<Deployments />} />
               <Route path="/dashboard/settings" element={<Settings />} />
               <Route path="/dashboard/monitoring" element={<Monitoring />} />
+              <Route path="/dashboard/admin" element={<Admin />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

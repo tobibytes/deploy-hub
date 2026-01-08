@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import StatusBadge from '@/components/dashboard/StatusBadge';
+import EnvVariablesDialog from '@/components/EnvVariablesDialog';
 // Supabase removed; data now comes from backend APIs
 import { backendAPI } from '@/lib/backend-api';
 import { errorService } from '@/services/errorService';
@@ -62,6 +63,7 @@ interface ContainerData {
   port: number | null;
   local_url?: string;
   localUrl?: string;
+  publicUrl?: string;
   cpu_limit: string | null;
   memory_limit: string | null;
   project_id: string;
@@ -80,6 +82,8 @@ export default function Containers() {
   const [selectedContainer, setSelectedContainer] = useState<ContainerData | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [stoppingContainerId, setStoppingContainerId] = useState<string | null>(null);
+  const [envVarsDialogOpen, setEnvVarsDialogOpen] = useState(false);
+  const [selectedContainerForEnv, setSelectedContainerForEnv] = useState<ContainerData | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -114,6 +118,7 @@ export default function Containers() {
         status: c.status,
         port: c.port,
         localUrl: c.local_url,
+        publicUrl: c.public_url,
         cpu_limit: c.cpu_limit,
         memory_limit: c.memory_limit,
         project_id: c.project_id,
@@ -220,8 +225,21 @@ export default function Containers() {
       toast.success(
         <div>
           <p>Container deployed successfully!</p>
+          {deployment.publicUrl && (
+            <p className="text-sm mt-2">
+              Public: <a 
+                href={deployment.publicUrl} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="underline"
+                aria-label={`Open container at ${deployment.publicUrl} in new tab`}
+              >
+                {deployment.publicUrl}
+              </a>
+            </p>
+          )}
           <p className="text-sm mt-1">
-            Access at: <a 
+            Local: <a 
               href={deployment.localUrl} 
               target="_blank" 
               rel="noopener noreferrer" 
@@ -546,13 +564,14 @@ export default function Containers() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="glass-strong">
-                        <DropdownMenuItem onClick={() => navigate('/dashboard/domains')}>
-                          <Globe className="h-4 w-4 mr-2" />
-                          Add Domain
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedContainerForEnv(container);
+                            setEnvVarsDialogOpen(true);
+                          }}
+                        >
                           <Settings2 className="h-4 w-4 mr-2" />
-                          Settings
+                          Environment Variables
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
@@ -631,17 +650,33 @@ export default function Containers() {
                       </div>
                     </div>
                     {container.localUrl && container.status === 'running' && (
-                      <div className="flex items-center gap-2 p-2 bg-primary/5 rounded-md border border-primary/20">
-                        <Globe className="h-4 w-4 text-primary" />
-                        <a 
-                          href={container.localUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-sm text-primary hover:underline font-mono flex items-center gap-1"
-                        >
-                          {container.localUrl}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
+                      <div className="space-y-2">
+                        {/* <div className="flex items-center gap-2 p-2 bg-primary/5 rounded-md border border-primary/20">
+                          <Globe className="h-4 w-4 text-primary" />
+                          <a 
+                            href={container.localUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm text-primary hover:underline font-mono flex items-center gap-1"
+                          >
+                            {container.localUrl}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div> */}
+                        {container.publicUrl && (
+                          <div className="flex items-center gap-2 p-2 bg-green-500/5 rounded-md border border-green-500/20">
+                            <Globe className="h-4 w-4 text-green-600" />
+                            <a 
+                              href={container.publicUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-sm text-green-600 hover:underline font-mono flex items-center gap-1"
+                            >
+                              {container.publicUrl}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        )}
                       </div>
                     )}
                     <div className="pt-2 border-t border-border flex items-center justify-between text-sm text-muted-foreground">
@@ -754,10 +789,26 @@ export default function Containers() {
                 <p className="text-sm">{selectedContainer.projects?.name}</p>
               </div>
 
+              {/* Public URL Section */}
+              {selectedContainer.publicUrl && selectedContainer.status === 'running' && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Public URL</p>
+                  <a 
+                    href={selectedContainer.publicUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-green-600 hover:underline font-mono flex items-center gap-2 p-2 bg-green-500/5 rounded-md border border-green-500/20"
+                  >
+                    {selectedContainer.publicUrl}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+
               {/* URL Section */}
               {selectedContainer.localUrl && selectedContainer.status === 'running' && (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground">Access URL</p>
+                  <p className="text-xs font-semibold text-muted-foreground">Local URL</p>
                   <a 
                     href={selectedContainer.localUrl} 
                     target="_blank" 
@@ -804,14 +855,6 @@ export default function Containers() {
 
           <div className="flex gap-3 mt-6 pt-4 border-t border-border">
             <Button 
-              variant="outline" 
-              onClick={() => navigate('/dashboard/domains')}
-              className="flex-1"
-            >
-              <Globe className="h-4 w-4 mr-2" />
-              Add Domain
-            </Button>
-            <Button 
               variant="destructive" 
               onClick={() => {
                 setDetailsOpen(false);
@@ -825,6 +868,16 @@ export default function Containers() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Environment Variables Dialog */}
+      {selectedContainerForEnv && (
+        <EnvVariablesDialog
+          open={envVarsDialogOpen}
+          onOpenChange={setEnvVarsDialogOpen}
+          containerId={selectedContainerForEnv.docker_container_id || ''}
+          containerName={selectedContainerForEnv.name}
+        />
+      )}
     </DashboardLayout>
   );
 }

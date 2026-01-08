@@ -71,3 +71,52 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Expose locally on your domain using Cloudflare Tunnel
+
+This repo includes a one-command flow to expose your local app through Cloudflare Tunnel without touching the Cloudflare dashboard.
+
+### One-time setup
+
+1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+2. Authenticate once (writes cert to `~/.cloudflared/cert.pem`):
+	```sh
+	cloudflared tunnel login
+	```
+
+### Run with your domain
+
+1. Optionally set a hostname. If omitted, the script generates a random subdomain on tobiolajide.com each run (e.g., lumen-ab12cd34.tobiolajide.com):
+	```sh
+	export CF_HOSTNAME=myapp.tobiolajide.com   # optional
+	```
+2. Start the public URL (idempotent – creates tunnel, DNS, config, and runs cloudflared):
+	```sh
+	make public
+	```
+3. Open the printed URL (the script always prints it):
+	```
+	Public URL: https://<your-random-or-custom-hostname>
+	```
+
+### Defaults and customization
+
+- Defaults: `CF_TUNNEL_NAME=lumen`, `CF_HOSTNAME` auto-generated random subdomain on `tobiolajide.com`, `LOCAL_SERVICE=http://localhost:8080`, `CF_CONFIG_DIR=~/.cloudflared`, `CF_CONFIG_FILE=~/.cloudflared/config.yml`.
+- Override by exporting env vars before `make public` (e.g., `export CF_HOSTNAME=myapp.tobiolajide.com`).
+- Tunnel UUID is cached in `.forgequeue/tunnel_uuid`; PID in `.forgequeue/cloudflared.pid`; logs in `.forgequeue/cloudflared.log`.
+
+### Stop / status
+
+- Stop: `make public-stop`
+- Status: `make public-status`
+
+### How it works
+
+- Ensures cloudflared is installed and `cloudflared tunnel login` was run (checks `~/.cloudflared/cert.pem`).
+- Verifies the local service is reachable before starting.
+- Reuses or creates the tunnel, writes `config.yml`, ensures DNS via `cloudflared tunnel route dns`, then starts the tunnel and prints the URL.
+
+Optional: To run at login on macOS, you can install the cloudflared service (not required for normal use):
+```sh
+cloudflared service install
+```

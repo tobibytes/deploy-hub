@@ -37,6 +37,9 @@ docker run -d \
   --name deploy-hub-backend-container \
   -p 3001:3001 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /Users/oluwatobiolajide/.cloudflared/cert.pem:/home/node/.cloudflared/cert.pem:ro \
+  -v /Users/oluwatobiolajide/.cloudflared:/home/node/.cloudflared:ro \
+  -e CF_CERT_FILE=/home/node/.cloudflared/cert.pem \
   $ENV_FILE_ARG \
   --restart unless-stopped \
   deploy-hub-backend

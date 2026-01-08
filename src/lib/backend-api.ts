@@ -86,9 +86,11 @@ class BackendAPI {
   }
 
   async deployContainer(data: DeployContainerRequest): Promise<DeploymentResponse> {
+    const token = this.getAuthToken();
     return this.makeRequest(`${this.baseUrl}/api/containers`, {
       method: 'POST',
       body: JSON.stringify(data),
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     });
   }
 
@@ -97,7 +99,10 @@ class BackendAPI {
   }
 
   async listAppContainers(): Promise<{ containers: any[] }> {
-    return this.makeRequest(`${this.baseUrl}/api/app/containers`);
+    const token = this.getAuthToken();
+    return this.makeRequest(`${this.baseUrl}/api/app/containers`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
   }
 
   async getContainer(id: string): Promise<any> {
@@ -129,21 +134,180 @@ class BackendAPI {
   }
 
   async getMonitoringLogs(limit?: number, level?: string): Promise<any> {
+    const token = this.getAuthToken();
     const params = new URLSearchParams();
     if (limit) params.append('limit', limit.toString());
     if (level) params.append('level', level);
     
-    return this.makeRequest(`${this.baseUrl}/api/monitoring/logs?${params.toString()}`);
+    return this.makeRequest(`${this.baseUrl}/api/monitoring/logs?${params.toString()}`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
   }
 
   async getMonitoringStats(): Promise<any> {
-    return this.makeRequest(`${this.baseUrl}/api/monitoring/stats`);
+    const token = this.getAuthToken();
+    return this.makeRequest(`${this.baseUrl}/api/monitoring/stats`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
   }
 
   async clearMonitoringLogs(): Promise<any> {
+    const token = this.getAuthToken();
     return this.makeRequest(`${this.baseUrl}/api/monitoring/logs`, {
       method: 'DELETE',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     });
+  }
+
+  // Admin endpoints
+  async getAdminLogs(limit?: number, level?: string): Promise<any> {
+    const token = this.getAuthToken();
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (level) params.append('level', level);
+    
+    return this.makeRequest(`${this.baseUrl}/api/admin/logs?${params.toString()}`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
+  }
+
+  async getAdminStats(): Promise<any> {
+    const token = this.getAuthToken();
+    return this.makeRequest(`${this.baseUrl}/api/admin/stats`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
+  }
+
+  // Auth endpoints
+  async signup(email: string, password: string, fullName?: string): Promise<{ user: any; token: string }> {
+    const response = await this.makeRequest<{ data: { user: any; token: string } }>(
+      `${this.baseUrl}/api/auth/signup`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password, fullName }),
+      }
+    );
+    // Store token in localStorage
+    if (response.data.token) {
+      localStorage.setItem('authToken', response.data.token);
+    }
+    return response.data;
+  }
+
+  async signin(email: string, password: string): Promise<{ user: any; token: string }> {
+    const response = await this.makeRequest<{ data: { user: any; token: string } }>(
+      `${this.baseUrl}/api/auth/signin`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      }
+    );
+    // Store token in localStorage
+    if (response.data.token) {
+      localStorage.setItem('authToken', response.data.token);
+    }
+    return response.data;
+  }
+
+  async getCurrentUser(): Promise<{ user: any }> {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+    
+    const response = await this.makeRequest<{ data: { user: any } }>(
+      `${this.baseUrl}/api/auth/me`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+    return response.data;
+  }
+
+  signout(): void {
+    localStorage.removeItem('authToken');
+  }
+
+  getAuthToken(): string | null {
+    return localStorage.getItem('authToken');
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const response = await this.makeRequest<{ success: boolean; message: string }>(
+      `${this.baseUrl}/api/auth/change-password`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      }
+    );
+    return response;
+  }
+
+  async getContainerEnvironmentVariables(containerId: string): Promise<{ environmentVariables: Record<string, string> }> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    return this.makeRequest(
+      `${this.baseUrl}/api/containers/${containerId}/env`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+  }
+
+  async updateContainerEnvironmentVariables(
+    containerId: string,
+    environmentVariables: Record<string, string>
+  ): Promise<{ success: boolean; message: string; environmentVariables: Record<string, string>; restartError?: string }> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    return this.makeRequest(
+      `${this.baseUrl}/api/containers/${containerId}/env`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ environmentVariables }),
+      }
+    );
+  }
+
+  async restartContainer(containerId: string): Promise<{ success: boolean; message: string }> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    return this.makeRequest(
+      `${this.baseUrl}/api/containers/${containerId}/restart`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      }
+    );
   }
 }
 

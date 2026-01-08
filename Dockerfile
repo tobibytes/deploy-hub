@@ -14,6 +14,17 @@ RUN npm ci
 COPY server ./server
 COPY tsconfig.json ./
 
+# Copy scripts directory for Cloudflare tunnel automation
+COPY scripts ./scripts
+RUN chmod +x scripts/*.sh
+
+# Install cloudflared for tunnel management
+RUN apk add --no-cache curl bash ca-certificates \
+    && curl -L --output /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/download/2024.12.0/cloudflared-linux-amd64 \
+    && mv /tmp/cloudflared /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared \
+    && cloudflared --version
+
 # Expose the port the app runs on
 EXPOSE 3001
 

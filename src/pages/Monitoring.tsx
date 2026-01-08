@@ -29,12 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 
 interface ErrorLog {
   timestamp: string;
@@ -58,12 +52,10 @@ export default function Monitoring() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [frontendLogs, setFrontendLogs] = useState<ErrorLog[]>([]);
-  const [backendLogs, setBackendLogs] = useState<BackendLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [frontendStats, setFrontendStats] = useState({ total: 0, errors: 0, warnings: 0, info: 0 });
-  const [backendStats, setBackendStats] = useState({ total: 0, errors: 0, warnings: 0, info: 0 });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -80,22 +72,10 @@ export default function Monitoring() {
   const fetchLogs = async () => {
     setIsLoading(true);
     try {
-      // Fetch frontend logs from localStorage
+      // Fetch frontend logs from localStorage (user's browser activity)
       const feLogs = errorService.getLogs();
       setFrontendLogs(feLogs);
       setFrontendStats(errorService.getStats());
-
-      // Fetch backend logs
-      try {
-        const beLogsResponse = await backendAPI.getMonitoringLogs(100);
-        setBackendLogs(beLogsResponse.logs || []);
-        
-        const beStatsResponse = await backendAPI.getMonitoringStats();
-        setBackendStats(beStatsResponse);
-      } catch (error: any) {
-        console.error('Failed to fetch backend logs:', error);
-        errorService.logWarning('Failed to fetch backend logs', { error: error.message });
-      }
     } catch (error: any) {
       console.error('Error fetching logs:', error);
       toast.error('Failed to load monitoring data');
@@ -108,27 +88,16 @@ export default function Monitoring() {
     errorService.clearLogs();
     setFrontendLogs([]);
     setFrontendStats({ total: 0, errors: 0, warnings: 0, info: 0 });
-    toast.success('Frontend logs cleared');
+    toast.success('Logs cleared');
   };
 
-  const clearBackendLogs = async () => {
-    try {
-      await backendAPI.clearMonitoringLogs();
-      setBackendLogs([]);
-      setBackendStats({ total: 0, errors: 0, warnings: 0, info: 0 });
-      toast.success('Backend logs cleared');
-    } catch (error: any) {
-      toast.error('Failed to clear backend logs');
-    }
-  };
-
-  const exportLogs = (logs: any[], filename: string) => {
-    const dataStr = JSON.stringify(logs, null, 2);
+  const exportLogs = () => {
+    const dataStr = JSON.stringify(frontendLogs, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = filename;
+    link.download = 'project-logs.json';
     link.click();
     URL.revokeObjectURL(url);
     toast.success('Logs exported successfully');
@@ -183,7 +152,7 @@ export default function Monitoring() {
   };
 
   const renderLogCard = (log: ErrorLog | BackendLog, index: number) => {
-    const normalizedLevel = (log.level === 'warn' ? 'warning' : log.level) as 'error' | 'warning' | 'info';
+    const normalizedLevel = (log.level === 'warn' ? 'warning' : (log.level || 'info')) as 'error' | 'warning' | 'info';
     return (
       <Card key={index} className="glass border-border/50">
         <CardContent className="py-4">
@@ -194,7 +163,7 @@ export default function Monitoring() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant={getLevelBadgeVariant(normalizedLevel)}>
-                      {normalizedLevel.toUpperCase()}
+                      {normalizedLevel?.toUpperCase() || 'INFO'}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(log.timestamp), 'MMM dd, yyyy HH:mm:ss')}
@@ -281,9 +250,9 @@ export default function Monitoring() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Error Monitoring</h1>
+            <h1 className="text-3xl font-bold">Project Monitoring</h1>
             <p className="text-muted-foreground mt-1">
-              Track and manage application errors and logs
+              Track your project activity and logs
             </p>
           </div>
           <Button variant="outline" onClick={fetchLogs}>
@@ -322,113 +291,53 @@ export default function Monitoring() {
           </CardContent>
         </Card>
 
-        {/* Tabs for Frontend and Backend */}
-        <Tabs defaultValue="frontend" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="frontend">Frontend Logs</TabsTrigger>
-            <TabsTrigger value="backend">Backend Logs</TabsTrigger>
-          </TabsList>
+        {/* Stats */}
+        {renderStats(frontendStats)}
 
-          <TabsContent value="frontend" className="space-y-4">
-            {/* Frontend Stats */}
-            {renderStats(frontendStats)}
+        {/* Actions */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportLogs}
+            disabled={frontendLogs.length === 0}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={clearFrontendLogs}
+            disabled={frontendLogs.length === 0}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Clear Logs
+          </Button>
+        </div>
 
-            {/* Frontend Actions */}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportLogs(frontendLogs, 'frontend-logs.json')}
-                disabled={frontendLogs.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearFrontendLogs}
-                disabled={frontendLogs.length === 0}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Clear Logs
-              </Button>
-            </div>
-
-            {/* Frontend Logs */}
-            {isLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : filterLogs(frontendLogs).length === 0 ? (
-              <Card className="glass border-border/50">
-                <CardContent className="flex flex-col items-center justify-center py-20">
-                  <Activity className="h-16 w-16 text-muted-foreground mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">No frontend logs</h3>
-                  <p className="text-muted-foreground text-center">
-                    {searchQuery || filterLevel !== 'all'
-                      ? 'No logs match your search criteria'
-                      : 'Frontend error logs will appear here when errors occur'}
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {filterLogs(frontendLogs).map((log, index) => renderLogCard(log, index))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="backend" className="space-y-4">
-            {/* Backend Stats */}
-            {renderStats(backendStats)}
-
-            {/* Backend Actions */}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportLogs(backendLogs, 'backend-logs.json')}
-                disabled={backendLogs.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearBackendLogs}
-                disabled={backendLogs.length === 0}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Clear Logs
-              </Button>
-            </div>
-
-            {/* Backend Logs */}
-            {isLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : filterLogs(backendLogs).length === 0 ? (
-              <Card className="glass border-border/50">
-                <CardContent className="flex flex-col items-center justify-center py-20">
-                  <Activity className="h-16 w-16 text-muted-foreground mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">No backend logs</h3>
-                  <p className="text-muted-foreground text-center">
-                    {searchQuery || filterLevel !== 'all'
-                      ? 'No logs match your search criteria'
-                      : 'Backend error logs will appear here when errors occur'}
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {filterLogs(backendLogs).map((log, index) => renderLogCard(log, index))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+        {/* Logs */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : filterLogs(frontendLogs).length === 0 ? (
+          <Card className="glass border-border/50">
+            <CardContent className="flex flex-col items-center justify-center py-20">
+              <Activity className="h-16 w-16 text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold mb-2">No project logs</h3>
+              <p className="text-muted-foreground text-center">
+                {searchQuery || filterLevel !== 'all'
+                  ? 'No logs match your search criteria'
+                  : 'Your project activity logs will appear here'}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {filterLogs(frontendLogs).map((log, index) => renderLogCard(log, index))}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -6,13 +6,13 @@ import {
   Cloud, 
   LayoutDashboard, 
   Container, 
-  Globe, 
   Settings, 
   LogOut,
   Menu,
   X,
   Activity,
-  AlertCircle
+  AlertCircle,
+  Shield
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -24,9 +24,9 @@ interface DashboardLayoutProps {
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: Container, label: 'Containers', href: '/dashboard/containers' },
-  { icon: Globe, label: 'Domains', href: '/dashboard/domains' },
   { icon: Activity, label: 'Deployments', href: '/dashboard/deployments' },
   { icon: AlertCircle, label: 'Monitoring', href: '/dashboard/monitoring' },
+  { icon: Shield, label: 'Admin', href: '/dashboard/admin' },
   { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
 ];
 
@@ -55,24 +55,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
-                  isActive 
-                    ? "bg-primary/10 text-primary border border-primary/20" 
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                )}
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
+          {navItems
+            .filter(item => item.label !== 'Admin' || user?.isAdmin)
+            .map((item) => {
+              const isActive = location.pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
+                    isActive 
+                      ? "bg-primary/10 text-primary border border-primary/20" 
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span className="font-medium">{item.label}</span>
+                </Link>
+              );
+            })}
         </nav>
 
         <div className="p-4 border-t border-border">
@@ -117,25 +119,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {mobileMenuOpen && (
           <div className="absolute top-full left-0 right-0 bg-card border-b border-border animate-fade-in">
             <nav className="p-4 space-y-1">
-              {navItems.map((item) => {
-                const isActive = location.pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    to={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-lg transition-all",
-                      isActive 
-                        ? "bg-primary/10 text-primary" 
-                        : "text-muted-foreground hover:bg-secondary"
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+              {navItems
+                .filter(item => item.label !== 'Admin' || user?.isAdmin)
+                .map((item) => {
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3 rounded-lg transition-all",
+                        isActive 
+                          ? "bg-primary/10 text-primary" 
+                          : "text-muted-foreground hover:bg-secondary"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
               <Button
                 variant="ghost"
                 className="w-full justify-start text-muted-foreground hover:text-destructive mt-4"
