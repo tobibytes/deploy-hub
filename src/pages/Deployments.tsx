@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/dashboard/StatusBadge';
 import { supabase } from '@/integrations/supabase/client';
+import { errorService } from '@/services/errorService';
 import { 
   Activity, 
   Loader2,
@@ -63,10 +64,14 @@ export default function Deployments() {
         .select('*, containers(name, image, projects(name))')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        errorService.logError('Failed to fetch deployments', error);
+        throw error;
+      }
       setDeployments(data as unknown as DeploymentData[]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching deployments:', error);
+      errorService.logError('Error fetching deployments', error);
       toast.error('Failed to load deployments');
     } finally {
       setIsLoading(false);

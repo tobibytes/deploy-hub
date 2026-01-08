@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
+import { errorService } from '@/services/errorService';
 import { 
   User, 
   Key,
@@ -48,28 +49,36 @@ export default function Settings() {
 
   const fetchProfile = async () => {
     try {
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('user_id', user!.id)
+        .eq('user_id', user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== 'PGRST116') {
+        errorService.logError('Failed to fetch profile', error);
+        throw error;
+      }
       
       if (data) {
         setProfile(data);
         setFormData({
           fullName: data.full_name || '',
-          email: data.email || user!.email || '',
+          email: data.email || user.email || '',
         });
       } else {
         setFormData({
           fullName: '',
-          email: user!.email || '',
+          email: user.email || '',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching profile:', error);
+      errorService.logError('Error fetching profile', error);
     } finally {
       setIsLoading(false);
     }
@@ -78,18 +87,27 @@ export default function Settings() {
   const updateProfile = async () => {
     setIsSaving(true);
     try {
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       const { error } = await supabase
         .from('profiles')
         .upsert({
-          user_id: user!.id,
+          user_id: user.id,
           full_name: formData.fullName,
           email: formData.email,
         });
 
-      if (error) throw error;
+      if (error) {
+        errorService.logError('Failed to update profile', error);
+        throw error;
+      }
+      errorService.logInfo('Profile updated successfully');
       toast.success('Profile updated successfully');
     } catch (error: any) {
       console.error('Error updating profile:', error);
+      errorService.logError('Error updating profile', error);
       toast.error(error.message || 'Failed to update profile');
     } finally {
       setIsSaving(false);
