@@ -1,17 +1,14 @@
 # Dockerfile for Backend Server
 FROM node:20-alpine
 
-# Install Docker CLI (needed for dockerode to work)
-RUN apk add --no-cache docker-cli
-
 # Set working directory
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (including tsx for TypeScript execution)
+RUN npm ci
 
 # Copy server code and TypeScript configs
 COPY server ./server
