@@ -83,6 +83,7 @@ export default function Containers() {
     projectName: '',
     projectDescription: '',
     port: '',
+    containerPort: '80',
     cpuLimit: '0.5',
     memoryLimit: '512Mi',
   });
@@ -161,6 +162,7 @@ export default function Containers() {
         name: formData.name,
         image: formData.image,
         port: formData.port ? parseInt(formData.port) : undefined,
+        containerPort: formData.containerPort ? parseInt(formData.containerPort) : undefined,
         cpuLimit: formData.cpuLimit,
         memoryLimit: formData.memoryLimit,
       });
@@ -205,7 +207,17 @@ export default function Containers() {
       toast.success(
         <div>
           <p>Container deployed successfully!</p>
-          <p className="text-sm mt-1">Access at: <a href={deployment.localUrl} target="_blank" rel="noopener noreferrer" className="underline">{deployment.localUrl}</a></p>
+          <p className="text-sm mt-1">
+            Access at: <a 
+              href={deployment.localUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="underline"
+              aria-label={`Open container at ${deployment.localUrl} in new tab`}
+            >
+              {deployment.localUrl}
+            </a>
+          </p>
         </div>
       );
       
@@ -216,6 +228,7 @@ export default function Containers() {
         projectName: '',
         projectDescription: '',
         port: '',
+        containerPort: '80',
         cpuLimit: '0.5',
         memoryLimit: '512Mi',
       });
@@ -369,15 +382,16 @@ export default function Containers() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="port">Port</Label>
+                    <Label htmlFor="port">Host Port</Label>
                     <Input
                       id="port"
                       type="number"
-                      placeholder="3000"
+                      placeholder="Auto (8080-8999)"
                       value={formData.port}
                       onChange={(e) => setFormData({ ...formData, port: e.target.value })}
                       className="bg-input"
                     />
+                    <p className="text-xs text-muted-foreground">Port on your machine (auto-assigned if empty)</p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -389,6 +403,23 @@ export default function Containers() {
                     onChange={(e) => setFormData({ ...formData, image: e.target.value })}
                     className="bg-input font-mono text-sm"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Examples: nginx:alpine, node:18-alpine, httpd:alpine
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="containerPort">Container Port</Label>
+                  <Input
+                    id="containerPort"
+                    type="number"
+                    placeholder="80"
+                    value={formData.containerPort}
+                    onChange={(e) => setFormData({ ...formData, containerPort: e.target.value })}
+                    className="bg-input"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Port inside the container (80 for nginx/apache, 3000 for node apps)
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">

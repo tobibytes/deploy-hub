@@ -1,6 +1,7 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import Docker from 'dockerode';
+import getPort from 'get-port';
 
 const app: Express = express();
 const PORT = process.env.PORT || 3001;
@@ -11,6 +12,8 @@ app.use(cors());
 app.use(express.json());
 
 // Store container metadata (in production, this would be in a database)
+// NOTE: This in-memory store will be lost on server restart. In production,
+// this data should be persisted to the database or synced on startup.
 interface ContainerMetadata {
   containerId: string;
   name: string;
@@ -29,19 +32,9 @@ function generateLocalUrl(port: number): string {
 }
 
 // Helper function to find an available port
-function getAvailablePort(): number {
-  // In production, you'd check for actually available ports
-  // For now, we'll use a range starting from 8080
-  const usedPorts = Array.from(containerMetadata.values())
-    .map(c => c.port)
-    .filter(p => p !== undefined);
-  
-  for (let port = 8080; port < 9000; port++) {
-    if (!usedPorts.includes(port)) {
-      return port;
-    }
-  }
-  return 8080;
+async function getAvailablePort(): Promise<number> {
+  // Use get-port to find an actually available port in the range
+  return await getPort({ port: getPort.makeRange(8080, 8999) });
 }
 
 // Health check endpoint
@@ -94,7 +87,7 @@ app.get('/api/containers/:id', async (req: Request, res: Response) => {
 // Deploy a new container
 app.post('/api/containers', async (req: Request, res: Response) => {
   try {
-    const { name, image, port: requestedPort, cpuLimit, memoryLimit, envVars } = req.body;
+    const { name, image, port: requestedPort, containerPort: requestedContainerPort, cpuLimit, memoryLimit, envVars } = req.body;
     
     if (!name || !image) {
       return res.status(400).json({ error: 'Name and image are required' });
@@ -114,9 +107,9 @@ app.post('/api/containers', async (req: Request, res: Response) => {
 
     // Determine port mapping
     // Host port is where we expose on localhost
-    // Container port is typically 80 for web servers, 3000 for node apps, etc.
-    const hostPort = requestedPort || getAvailablePort();
-    const containerPort = 80; // Default to port 80 inside the container
+    // Container port defaults to 80, but can be specified (e.g., 3000 for Node.js apps)
+    const hostPort = requestedPort || await getAvailablePort();
+    const containerPort = requestedContainerPort || 80;
     
     const portBindings: any = {};
     portBindings[`${containerPort}/tcp`] = [{ HostPort: hostPort.toString() }];

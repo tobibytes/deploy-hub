@@ -4,6 +4,7 @@ export interface DeployContainerRequest {
   name: string;
   image: string;
   port?: number;
+  containerPort?: number;
   cpuLimit?: string;
   memoryLimit?: string;
   envVars?: string[];
@@ -57,8 +58,10 @@ class BackendAPI {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to deploy container');
+      const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+      throw new Error(
+        `Failed to deploy container (HTTP ${response.status}): ${error.message || error.error || 'Unknown error'}`
+      );
     }
 
     return response.json();
