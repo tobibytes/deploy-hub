@@ -1,6 +1,11 @@
 #!/bin/bash
 
 # Script to run the backend in a Docker container
+#
+# SECURITY NOTE: This script mounts the Docker socket (/var/run/docker.sock) into the container,
+# which grants the container full Docker daemon privileges. This is necessary for the backend
+# to manage Docker containers (which is the core functionality of this application).
+# Only use this in development or trusted environments.
 
 set -e
 
