@@ -33,8 +33,9 @@ function generateLocalUrl(port: number): string {
 
 // Helper function to find an available port
 async function getAvailablePort(): Promise<number> {
-  // Use get-port to find an actually available port in the range
-  return await getPort({ port: getPort.makeRange(8080, 8999) });
+  // Use get-port to find an actually available port in the range 8080-8999
+  const portRange = Array.from({ length: 920 }, (_, i) => 8080 + i);
+  return await getPort({ port: portRange });
 }
 
 // Health check endpoint
