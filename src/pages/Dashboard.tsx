@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/dashboard/StatusBadge';
 import { supabase } from '@/integrations/supabase/client';
+import { errorService } from '@/services/errorService';
 import { 
   Container, 
   Globe, 
@@ -69,6 +70,16 @@ export default function Dashboard() {
         supabase.from('deployments').select('id'),
       ]);
 
+      if (containersResult.error) {
+        errorService.logError('Failed to fetch containers', containersResult.error);
+      }
+      if (domainsResult.error) {
+        errorService.logError('Failed to fetch domains', domainsResult.error);
+      }
+      if (deploymentsResult.error) {
+        errorService.logError('Failed to fetch deployments', deploymentsResult.error);
+      }
+
       const containers = containersResult.data || [];
       const running = containers.filter(c => c.status === 'running').length;
 
@@ -80,17 +91,20 @@ export default function Dashboard() {
       });
 
       // Fetch recent containers with project info
-      const { data: recentData } = await supabase
+      const { data: recentData, error: recentError } = await supabase
         .from('containers')
         .select('id, name, image, status, project_id, projects(id, name, description, framework, created_at)')
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (recentData) {
+      if (recentError) {
+        errorService.logError('Failed to fetch recent containers', recentError);
+      } else if (recentData) {
         setRecentContainers(recentData as unknown as ContainerData[]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
+      errorService.logError('Error fetching dashboard data', error);
       toast.error('Failed to load dashboard data');
     } finally {
       setIsLoading(false);
