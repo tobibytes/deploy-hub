@@ -113,8 +113,10 @@ app.post('/api/containers', async (req: Request, res: Response) => {
     });
 
     // Determine port mapping
+    // Host port is where we expose on localhost
+    // Container port is typically 80 for web servers, 3000 for node apps, etc.
     const hostPort = requestedPort || getAvailablePort();
-    const containerPort = requestedPort || 80;
+    const containerPort = 80; // Default to port 80 inside the container
     
     const portBindings: any = {};
     portBindings[`${containerPort}/tcp`] = [{ HostPort: hostPort.toString() }];

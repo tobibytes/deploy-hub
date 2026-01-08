@@ -231,38 +231,27 @@ export default function Containers() {
 
   const updateContainerStatus = async (containerId: string, action: 'start' | 'stop') => {
     try {
-      // Find container by database ID to get Docker container ID
+      // Find container by database ID
       const { data: containerData } = await supabase
         .from('containers')
-        .select('*')
+        .select('docker_container_id, name')
         .eq('id', containerId)
         .single();
 
-      if (!containerData) {
-        toast.error('Container not found');
-        return;
-      }
-
-      // Get real Docker containers to find matching one
-      const { containers } = await backendAPI.listContainers();
-      const dockerContainer = containers.find(c => 
-        c.name === containerData.name || c.image.includes(containerData.image)
-      );
-
-      if (!dockerContainer) {
-        toast.error('Docker container not found');
+      if (!containerData || !containerData.docker_container_id) {
+        toast.error('Container not found or missing Docker ID');
         return;
       }
 
       if (action === 'start') {
-        await backendAPI.startContainer(dockerContainer.id);
+        await backendAPI.startContainer(containerData.docker_container_id);
         await supabase
           .from('containers')
           .update({ status: 'running' })
           .eq('id', containerId);
         toast.success('Container started successfully');
       } else {
-        await backendAPI.stopContainer(dockerContainer.id);
+        await backendAPI.stopContainer(containerData.docker_container_id);
         await supabase
           .from('containers')
           .update({ status: 'stopped' })
@@ -282,7 +271,7 @@ export default function Containers() {
       // Find container by database ID
       const { data: containerData } = await supabase
         .from('containers')
-        .select('*')
+        .select('docker_container_id, name')
         .eq('id', containerId)
         .single();
 
@@ -291,15 +280,13 @@ export default function Containers() {
         return;
       }
 
-      // Get real Docker containers to find matching one
-      const { containers } = await backendAPI.listContainers();
-      const dockerContainer = containers.find(c => 
-        c.name === containerData.name || c.image.includes(containerData.image)
-      );
-
-      // Delete from Docker if found
-      if (dockerContainer) {
-        await backendAPI.deleteContainer(dockerContainer.id);
+      // Delete from Docker if we have a docker_container_id
+      if (containerData.docker_container_id) {
+        try {
+          await backendAPI.deleteContainer(containerData.docker_container_id);
+        } catch (error) {
+          console.warn('Container may already be deleted from Docker:', error);
+        }
       }
 
       // Delete from database
