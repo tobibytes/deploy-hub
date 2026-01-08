@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import StatusBadge from '@/components/dashboard/StatusBadge';
 import { supabase } from '@/integrations/supabase/client';
+import { backendAPI } from '@/lib/backend-api';
 import { 
   Container, 
   Plus, 
@@ -19,7 +20,8 @@ import {
   Loader2,
   MoreVertical,
   RefreshCw,
-  Settings2
+  Settings2,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -52,10 +54,12 @@ interface Project {
 
 interface ContainerData {
   id: string;
+  containerId?: string;
   name: string;
   image: string;
-  status: 'pending' | 'building' | 'running' | 'stopped' | 'failed' | 'deploying';
+  status: 'pending' | 'building' | 'running' | 'stopped' | 'failed' | 'deploying' | 'exited' | 'created';
   port: number | null;
+  localUrl?: string;
   cpu_limit: string | null;
   memory_limit: string | null;
   project_id: string;
@@ -135,7 +139,7 @@ export default function Containers() {
 
     setIsCreating(true);
     try {
-      // Create project first
+      // Create project first in database
       const { data: project, error: projectError } = await supabase
         .from('projects')
         .insert({
@@ -149,7 +153,19 @@ export default function Containers() {
 
       if (projectError) throw projectError;
 
-      // Create container
+      // Update status in UI
+      toast.info('Building and deploying container...');
+
+      // Deploy container using backend API
+      const deployment = await backendAPI.deployContainer({
+        name: formData.name,
+        image: formData.image,
+        port: formData.port ? parseInt(formData.port) : undefined,
+        cpuLimit: formData.cpuLimit,
+        memoryLimit: formData.memoryLimit,
+      });
+
+      // Save container info to database
       const { data: container, error: containerError } = await supabase
         .from('containers')
         .insert({
@@ -157,25 +173,42 @@ export default function Containers() {
           image: formData.image,
           project_id: project.id,
           user_id: user!.id,
-          port: formData.port ? parseInt(formData.port) : null,
+          port: deployment.port,
+          docker_container_id: deployment.containerId,
+          local_url: deployment.localUrl,
           cpu_limit: formData.cpuLimit,
           memory_limit: formData.memoryLimit,
-          status: 'pending',
+          status: 'running',
         })
         .select()
         .single();
 
       if (containerError) throw containerError;
 
-      // Create initial deployment
+      // Create deployment record
       await supabase.from('deployments').insert({
         container_id: container.id,
         user_id: user!.id,
-        status: 'pending',
-        logs: ['Deployment initiated...'],
+        status: 'success',
+        finished_at: new Date().toISOString(),
+        logs: [
+          'Deployment initiated...',
+          'Pulling Docker image...',
+          'Image pulled successfully',
+          'Creating container...',
+          'Container created successfully',
+          'Starting container...',
+          `Container is now running at ${deployment.localUrl}`,
+        ],
       });
 
-      toast.success('Container created successfully!');
+      toast.success(
+        <div>
+          <p>Container deployed successfully!</p>
+          <p className="text-sm mt-1">Access at: <a href={deployment.localUrl} target="_blank" rel="noopener noreferrer" className="underline">{deployment.localUrl}</a></p>
+        </div>
+      );
+      
       setDialogOpen(false);
       setFormData({
         name: '',
@@ -187,8 +220,6 @@ export default function Containers() {
         memoryLimit: '512Mi',
       });
       
-      // Simulate deployment process
-      simulateDeployment(container.id);
       fetchContainers();
     } catch (error: any) {
       console.error('Error creating container:', error);
@@ -198,80 +229,90 @@ export default function Containers() {
     }
   };
 
-  const simulateDeployment = async (containerId: string) => {
-    // Simulate building phase
-    await supabase
-      .from('containers')
-      .update({ status: 'building' })
-      .eq('id', containerId);
-    
-    fetchContainers();
-
-    // Wait 2 seconds then deploy
-    setTimeout(async () => {
-      await supabase
+  const updateContainerStatus = async (containerId: string, action: 'start' | 'stop') => {
+    try {
+      // Find container by database ID to get Docker container ID
+      const { data: containerData } = await supabase
         .from('containers')
-        .update({ status: 'deploying' })
-        .eq('id', containerId);
-      fetchContainers();
+        .select('*')
+        .eq('id', containerId)
+        .single();
 
-      // Wait 2 more seconds then mark as running
-      setTimeout(async () => {
+      if (!containerData) {
+        toast.error('Container not found');
+        return;
+      }
+
+      // Get real Docker containers to find matching one
+      const { containers } = await backendAPI.listContainers();
+      const dockerContainer = containers.find(c => 
+        c.name === containerData.name || c.image.includes(containerData.image)
+      );
+
+      if (!dockerContainer) {
+        toast.error('Docker container not found');
+        return;
+      }
+
+      if (action === 'start') {
+        await backendAPI.startContainer(dockerContainer.id);
         await supabase
           .from('containers')
           .update({ status: 'running' })
           .eq('id', containerId);
-        
-        // Update deployment status
-        const { data: deployments } = await supabase
-          .from('deployments')
-          .select('id')
-          .eq('container_id', containerId)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (deployments && deployments.length > 0) {
-          await supabase
-            .from('deployments')
-            .update({ 
-              status: 'success',
-              finished_at: new Date().toISOString(),
-              logs: ['Deployment initiated...', 'Building image...', 'Deploying container...', 'Container is now running!'],
-            })
-            .eq('id', deployments[0].id);
-        }
-
-        fetchContainers();
-        toast.success('Container is now running!');
-      }, 2000);
-    }, 2000);
-  };
-
-  const updateContainerStatus = async (containerId: string, status: 'pending' | 'building' | 'running' | 'stopped' | 'failed' | 'deploying') => {
-    try {
-      await supabase
-        .from('containers')
-        .update({ status })
-        .eq('id', containerId);
+        toast.success('Container started successfully');
+      } else {
+        await backendAPI.stopContainer(dockerContainer.id);
+        await supabase
+          .from('containers')
+          .update({ status: 'stopped' })
+          .eq('id', containerId);
+        toast.success('Container stopped successfully');
+      }
       
       fetchContainers();
-      toast.success(`Container ${status === 'running' ? 'started' : 'stopped'}`);
-    } catch (error) {
-      toast.error('Failed to update container status');
+    } catch (error: any) {
+      console.error('Error updating container:', error);
+      toast.error(error.message || `Failed to ${action} container`);
     }
   };
 
   const deleteContainer = async (containerId: string) => {
     try {
+      // Find container by database ID
+      const { data: containerData } = await supabase
+        .from('containers')
+        .select('*')
+        .eq('id', containerId)
+        .single();
+
+      if (!containerData) {
+        toast.error('Container not found');
+        return;
+      }
+
+      // Get real Docker containers to find matching one
+      const { containers } = await backendAPI.listContainers();
+      const dockerContainer = containers.find(c => 
+        c.name === containerData.name || c.image.includes(containerData.image)
+      );
+
+      // Delete from Docker if found
+      if (dockerContainer) {
+        await backendAPI.deleteContainer(dockerContainer.id);
+      }
+
+      // Delete from database
       await supabase
         .from('containers')
         .delete()
         .eq('id', containerId);
       
       fetchContainers();
-      toast.success('Container deleted');
-    } catch (error) {
-      toast.error('Failed to delete container');
+      toast.success('Container deleted successfully');
+    } catch (error: any) {
+      console.error('Error deleting container:', error);
+      toast.error(error.message || 'Failed to delete container');
     }
   };
 
@@ -485,47 +526,63 @@ export default function Containers() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <StatusBadge status={container.status} />
-                      {container.port && (
-                        <span className="text-sm text-muted-foreground">
-                          Port: {container.port}
-                        </span>
-                      )}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <StatusBadge status={container.status} />
+                        {container.port && (
+                          <span className="text-sm text-muted-foreground">
+                            Port: {container.port}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {container.status === 'running' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateContainerStatus(container.id, 'stop')}
+                          >
+                            <Square className="h-3 w-3 mr-1" />
+                            Stop
+                          </Button>
+                        ) : container.status === 'stopped' || container.status === 'exited' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateContainerStatus(container.id, 'start')}
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Start
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" disabled>
+                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                            {container.status}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {container.status === 'running' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateContainerStatus(container.id, 'stopped')}
+                    {container.localUrl && container.status === 'running' && (
+                      <div className="flex items-center gap-2 p-2 bg-primary/5 rounded-md border border-primary/20">
+                        <Globe className="h-4 w-4 text-primary" />
+                        <a 
+                          href={container.localUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline font-mono flex items-center gap-1"
                         >
-                          <Square className="h-3 w-3 mr-1" />
-                          Stop
-                        </Button>
-                      ) : container.status === 'stopped' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateContainerStatus(container.id, 'running')}
-                        >
-                          <Play className="h-3 w-3 mr-1" />
-                          Start
-                        </Button>
-                      ) : (
-                        <Button variant="outline" size="sm" disabled>
-                          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                          {container.status}
-                        </Button>
-                      )}
+                          {container.localUrl}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-border flex items-center justify-between text-sm text-muted-foreground">
+                      <span>Project: {container.projects?.name}</span>
+                      <span>
+                        {container.cpu_limit} vCPU · {container.memory_limit}
+                      </span>
                     </div>
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-sm text-muted-foreground">
-                    <span>Project: {container.projects?.name}</span>
-                    <span>
-                      {container.cpu_limit} vCPU · {container.memory_limit}
-                    </span>
                   </div>
                 </CardContent>
               </Card>
