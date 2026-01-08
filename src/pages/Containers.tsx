@@ -876,6 +876,13 @@ export default function Containers() {
           onOpenChange={setEnvVarsDialogOpen}
           containerId={selectedContainerForEnv.docker_container_id || ''}
           containerName={selectedContainerForEnv.name}
+          onSaved={() => {
+            // Clear selected container references to prevent using stale IDs
+            setSelectedContainerForEnv(null);
+            setSelectedContainer(null);
+            // Refresh container list to get the new container ID after restart
+            fetchContainers();
+          }}
         />
       )}
     </DashboardLayout>

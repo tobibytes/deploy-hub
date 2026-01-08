@@ -274,7 +274,7 @@ class BackendAPI {
   async updateContainerEnvironmentVariables(
     containerId: string,
     environmentVariables: Record<string, string>
-  ): Promise<{ success: boolean; message: string; environmentVariables: Record<string, string>; restartError?: string }> {
+  ): Promise<{ success: boolean; message: string; environmentVariables: Record<string, string>; newContainerId?: string; restartError?: string }> {
     const token = this.getAuthToken();
     if (!token) {
       throw new Error('No authentication token found');

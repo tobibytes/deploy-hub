@@ -357,9 +357,9 @@ app.post('/api/containers', authenticateToken, validateDeployContainer, asyncHan
 
     await query(
       `INSERT INTO deploy_containers (
-        project_id, user_id, name, image, status, port, docker_container_id, local_url, public_url, cpu_limit, memory_limit
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [projectId, userId, name, image, 'running', hostPort, container.id, localUrl, publicUrl, cpuLimit || '0.5', memoryLimit || '512Mi']
+        project_id, user_id, name, image, status, port, container_port, docker_container_id, local_url, public_url, cpu_limit, memory_limit
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [projectId, userId, name, image, 'running', hostPort, containerPort, container.id, localUrl, publicUrl, cpuLimit || '0.5', memoryLimit || '512Mi']
     );
 
     await query(
@@ -449,7 +449,10 @@ app.post('/api/containers/:id/stop', validateContainerId, asyncHandler(async (re
       throw new AppError('Container is already stopped', 400);
     }
     if (error.statusCode === 404) {
-      throw new AppError(`Container not found: ${req.params.id}`, 404);
+      // Container doesn't exist in Docker - might have been recreated with new ID
+      // Clean up the database record
+      await query(`DELETE FROM deploy_containers WHERE docker_container_id = $1`, [req.params.id]).catch(() => {});
+      throw new AppError(`Container not found. It may have been recreated. Please refresh the page.`, 404);
     }
     throw new AppError(`Failed to stop container: ${error.message}`, 500);
   }
@@ -489,7 +492,11 @@ app.delete('/api/containers/:id', validateContainerId, asyncHandler(async (req: 
   } catch (error: any) {
     logger.error('Error deleting container', { containerId: req.params.id, error: error.message, stack: error.stack });
     if (error.statusCode === 404) {
-      throw new AppError(`Container not found: ${req.params.id}`, 404);
+      // Container doesn't exist in Docker - clean up DB and return success
+      containerMetadata.delete(req.params.id);
+      await query(`DELETE FROM deploy_containers WHERE docker_container_id = $1`, [req.params.id]).catch(() => {});
+      logger.info('Container already removed from Docker, cleaned up database', { containerId: req.params.id });
+      return res.json({ success: true, message: 'Container deleted successfully (already removed from Docker)' });
     }
     throw new AppError(`Failed to delete container: ${error.message}`, 500);
   }
@@ -579,19 +586,29 @@ app.put('/api/containers/:id/env', authenticateToken, asyncHandler(async (req: A
       throw new AppError('Invalid environment variables format', 400);
     }
     
-    // Update the database
-    const result = await query(
-      `UPDATE deploy_containers SET environment_variables = $1, updated_at = now() 
-       WHERE docker_container_id = $2 AND user_id = $3 
-       RETURNING docker_container_id`,
-      [JSON.stringify(environmentVariables), req.params.id, req.userId]
+    // Get container info from database
+    const dbResult = await query(
+      `SELECT id, docker_container_id, image, port, container_port, name, cpu_limit, memory_limit 
+       FROM deploy_containers 
+       WHERE docker_container_id = $1 AND user_id = $2`,
+      [req.params.id, req.userId]
     );
     
-    if (result.rows.length === 0) {
+    if (dbResult.rows.length === 0) {
       throw new AppError('Container not found', 404);
     }
     
-    // Get the container and restart it
+    const containerData = dbResult.rows[0];
+    const containerPort = containerData.container_port || 80; // Default to 80 if not set
+    
+    // Update the database with new env vars
+    await query(
+      `UPDATE deploy_containers SET environment_variables = $1, updated_at = now() 
+       WHERE docker_container_id = $2 AND user_id = $3`,
+      [JSON.stringify(environmentVariables), req.params.id, req.userId]
+    );
+    
+    // Try to recreate the container with new env vars
     try {
       const container = docker.getContainer(req.params.id);
       
@@ -599,42 +616,70 @@ app.put('/api/containers/:id/env', authenticateToken, asyncHandler(async (req: A
       await container.stop().catch(() => {}); // Ignore if already stopped
       
       // Wait a moment for graceful shutdown
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Get container inspect data to retrieve original run options
-      const containerInfo = await container.inspect();
+      // Remove the old container
+      await container.remove({ force: true }).catch(() => {});
       
-      // Prepare environment variables
+      // Prepare environment variables array
       const envArray = Object.entries(environmentVariables)
         .map(([key, value]) => `${key}=${value}`);
       
-      // Restart with new environment variables
-      await container.start({ Env: envArray }).catch(async (err: any) => {
-        // If start fails, try removing and recreating
-        logger.error('Failed to start container with new env vars, attempting remove and recreate', { error: err.message });
-        try {
-          await container.remove();
-          // Note: Full recreation would require more info about the original deployment
-          throw new AppError('Container requires full redeployment to apply environment variables', 500);
-        } catch {}
+      // Prepare port bindings (format: "80/tcp" -> [{ HostPort: "8080" }])
+      const exposedPorts: any = {};
+      const portBindings: any = {};
+      
+      if (containerData.port) {
+        const containerPortStr = `${containerPort}/tcp`;
+        exposedPorts[containerPortStr] = {};
+        portBindings[containerPortStr] = [{ HostPort: containerData.port.toString() }];
+      }
+      
+      // Create a new container with the same settings but new env vars
+      const newContainer = await docker.createContainer({
+        Image: containerData.image,
+        name: containerData.name,
+        Env: envArray,
+        ExposedPorts: exposedPorts,
+        HostConfig: {
+          PortBindings: portBindings,
+          Memory: parseMemoryLimit(containerData.memory_limit || '512Mi'),
+          CpuQuota: Math.round(parseFloat(containerData.cpu_limit || '0.5') * 100000),
+          CpuPeriod: 100000,
+          RestartPolicy: {
+            Name: 'unless-stopped'
+          }
+        },
       });
       
-      logger.info('Environment variables updated and container restarted', { 
-        containerId: req.params.id,
+      // Update the database with the new container ID
+      await query(
+        `UPDATE deploy_containers SET docker_container_id = $1, status = 'running', updated_at = now() 
+         WHERE id = $2`,
+        [newContainer.id, containerData.id]
+      );
+      
+      // Start the new container
+      await newContainer.start();
+      
+      logger.info('Environment variables updated and container recreated', { 
+        oldContainerId: req.params.id,
+        newContainerId: newContainer.id,
         envVarsCount: Object.keys(environmentVariables).length 
       });
       
       res.json({ 
         success: true, 
-        message: 'Environment variables updated and container restarted',
-        environmentVariables 
+        message: 'Environment variables updated and container restarted successfully',
+        environmentVariables,
+        newContainerId: newContainer.id
       });
     } catch (dockerErr: any) {
-      logger.error('Error restarting container with new env vars', { containerId: req.params.id, error: dockerErr.message });
-      // Even if restart fails, the variables were saved
+      logger.error('Error recreating container with new env vars', { containerId: req.params.id, error: dockerErr.message });
+      // Even if restart fails, the variables were saved in DB
       res.json({ 
         success: true, 
-        message: 'Environment variables saved, but failed to restart container',
+        message: 'Environment variables saved, but failed to restart container. Please restart manually.',
         environmentVariables,
         restartError: dockerErr.message
       });

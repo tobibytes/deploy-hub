@@ -173,8 +173,8 @@ if [ ! -f "$CERT_FILE" ]; then
 fi
 
 if ! curl -fsS -o /dev/null "$LOCAL_SERVICE"; then
-  echo "❌ LOCAL_SERVICE is not reachable: $LOCAL_SERVICE" >&2
-  exit 1
+  echo "⚠️  Warning: LOCAL_SERVICE is not immediately reachable: $LOCAL_SERVICE" >&2
+  echo "⚠️  The container may still be starting up. Continuing with tunnel setup..." >&2
 fi
 
 # 2) Ensure tunnel exists (idempotent)

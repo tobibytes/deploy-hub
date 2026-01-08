@@ -24,6 +24,7 @@ interface EnvVariablesDialogProps {
   onOpenChange: (open: boolean) => void;
   containerId: string;
   containerName: string;
+  onSaved?: () => void;
 }
 
 export default function EnvVariablesDialog({
@@ -31,6 +32,7 @@ export default function EnvVariablesDialog({
   onOpenChange,
   containerId,
   containerName,
+  onSaved,
 }: EnvVariablesDialogProps) {
   const [envVars, setEnvVars] = useState<EnvVariable[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -103,13 +105,13 @@ export default function EnvVariablesDialog({
         envVarObject
       );
 
-      if (result.restartError) {
-        toast.warning(`Variables saved but restart failed: ${result.restartError}`);
-      } else {
-        toast.success('Environment variables updated and container restarted!');
-      }
-
+      toast.success('Environment variables updated! Container is being restarted...');
       onOpenChange(false);
+      
+      // Refresh the parent component's data to get the new container ID
+      if (onSaved) {
+        onSaved();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update environment variables');
     } finally {
