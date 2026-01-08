@@ -789,6 +789,44 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, (req: AuthRequest, 
   res.json(stats);
 });
 
+// Get deployments for a user
+app.get('/api/deployments', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+    const result = await query(
+      `SELECT 
+        d.id,
+        d.status,
+        d.started_at,
+        d.finished_at,
+        d.created_at,
+        c.name as container_name,
+        c.image as container_image,
+        p.name as project_name
+       FROM deploy_deployments d
+       JOIN deploy_containers c ON d.container_id = c.id
+       LEFT JOIN deploy_projects p ON c.project_id = p.id
+       WHERE d.user_id = $1
+       ORDER BY d.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+
+    res.json({ 
+      deployments: result.rows,
+      count: result.rows.length,
+      limit,
+      offset
+    });
+  } catch (error: any) {
+    logger.error('Error fetching deployments', { error: error.message });
+    throw new AppError('Failed to fetch deployments', 500);
+  }
+}));
+
 // 404 handler for undefined routes
 app.use(notFoundHandler);
 

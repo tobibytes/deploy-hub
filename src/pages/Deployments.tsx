@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/dashboard/StatusBadge';
+import { backendAPI } from '@/lib/backend-api';
 import { errorService } from '@/services/errorService';
 import { 
   Activity, 
@@ -23,18 +24,12 @@ import { cn } from '@/lib/utils';
 interface DeploymentData {
   id: string;
   status: 'pending' | 'building' | 'deploying' | 'success' | 'failed' | 'cancelled';
-  commit_hash: string | null;
-  logs: string[] | null;
+  container_name: string;
+  container_image: string;
+  project_name: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
-  containers: {
-    name: string;
-    image: string;
-    projects: {
-      name: string;
-    };
-  };
 }
 
 export default function Deployments() {
@@ -58,8 +53,8 @@ export default function Deployments() {
 
   const fetchDeployments = async () => {
     try {
-      // No deployments backend endpoint yet; show empty
-      setDeployments([]);
+      const data = await backendAPI.getDeployments(100, 0);
+      setDeployments(data.deployments);
     } catch (error: any) {
       console.error('Error fetching deployments:', error);
       errorService.logError('Error fetching deployments', error);
@@ -169,13 +164,13 @@ export default function Deployments() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold">{deployment.containers.name}</h3>
+                          <h3 className="font-semibold">{deployment.container_name}</h3>
                           <StatusBadge status={deployment.status} />
                         </div>
                         <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                          <span>{deployment.containers.projects.name}</span>
+                          <span>{deployment.project_name || 'No Project'}</span>
                           <span>·</span>
-                          <span className="font-mono text-xs">{deployment.containers.image}</span>
+                          <span className="font-mono text-xs">{deployment.container_image}</span>
                         </div>
                       </div>
                     </div>

@@ -23,3 +23,5 @@ server/dist
 *.njsproj
 *.sln
 *.sw?
+.env
+bun.lockb

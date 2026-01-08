@@ -309,6 +309,26 @@ class BackendAPI {
       }
     );
   }
+
+  async getDeployments(limit?: number, offset?: number): Promise<{ deployments: any[]; count: number; limit: number; offset: number }> {
+    const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (offset) params.append('offset', offset.toString());
+
+    return this.makeRequest(
+      `${this.baseUrl}/api/deployments?${params.toString()}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+  }
 }
 
 export const backendAPI = new BackendAPI();
