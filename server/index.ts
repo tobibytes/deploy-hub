@@ -89,6 +89,8 @@ interface ContainerMetadata {
 const containerMetadata: Map<string, ContainerMetadata> = new Map();
 
 // Helper function to generate local URL
+// Note: We use localhost for local URLs as they're accessed by users on the same machine.
+// For Cloudflare tunnel origins, we use 127.0.0.1 to avoid IPv4/IPv6 resolution issues.
 function generateLocalUrl(port: number): string {
   return `http://localhost:${port}`;
 }
@@ -183,6 +185,8 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
       const inspectData = await container.inspect();
       
       // Extract host port from port bindings
+      // Note: We take the first mapped port. In most cases, containers expose one main port.
+      // If multiple ports are exposed, the first one in the mapping is used.
       let hostPort: number | undefined;
       const ports = inspectData.NetworkSettings?.Ports;
       if (ports) {
@@ -211,11 +215,24 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
       const publicUrl = await setupCloudfareTunnel(containerName, hostPort, existingHostname);
       
       if (publicUrl) {
-        // Update metadata
+        // Update or create metadata
+        const meta = containerMetadata.get(containerId);
         if (meta) {
           meta.publicUrl = publicUrl;
           meta.port = hostPort;
           containerMetadata.set(containerId, meta);
+        } else {
+          // Create new metadata entry if it doesn't exist (e.g., after server restart)
+          const newMeta: ContainerMetadata = {
+            containerId,
+            name: containerName,
+            image: '', // Will be updated when container is inspected
+            port: hostPort,
+            publicUrl,
+            status: 'running',
+            createdAt: new Date().toISOString()
+          };
+          containerMetadata.set(containerId, newMeta);
         }
         
         // Update database
