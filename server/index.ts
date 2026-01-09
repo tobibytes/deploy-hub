@@ -193,15 +193,18 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
       if (ports) {
         const portEntries = Object.entries(ports);
         if (portEntries.length > 1) {
+          const portList = portEntries.map(([p]) => p).join(', ');
           logger.warn('Container has multiple port mappings, using first available port', { 
             containerId, 
-            portCount: portEntries.length 
+            portCount: portEntries.length,
+            availablePorts: portList
           });
         }
         // Get the first mapped port
         for (const [containerPort, bindings] of portEntries) {
           if (bindings && Array.isArray(bindings) && bindings.length > 0 && bindings[0].HostPort) {
             hostPort = parseInt(bindings[0].HostPort, 10);
+            logger.info('Selected port for tunnel refresh', { containerId, containerPort, hostPort });
             break;
           }
         }
@@ -231,17 +234,21 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
           containerMetadata.set(containerId, meta);
         } else {
           // Create new metadata entry if it doesn't exist (e.g., after server restart)
-          // Use 'unknown' as placeholder for missing fields that will be updated on next container list/inspect
+          // Use actual values from inspect where possible, with fallbacks for missing data
+          const containerStatus = inspectData.State?.Status || 'running';
+          const containerImage = inspectData.Config?.Image || 'unknown';
+          
           const newMeta: ContainerMetadata = {
             containerId,
             name: containerName,
-            image: inspectData.Config?.Image || 'unknown',
+            image: containerImage,
             port: hostPort,
             publicUrl,
-            status: 'running',
+            status: containerStatus,
             createdAt: new Date().toISOString()
           };
           containerMetadata.set(containerId, newMeta);
+          logger.info('Created new metadata entry for container', { containerId, image: containerImage, status: containerStatus });
         }
         
         // Update database
@@ -250,7 +257,12 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
            WHERE docker_container_id = $3`,
           [publicUrl, hostPort, containerId]
         ).catch((err) => {
-          logger.warn('Failed to update public URL in database', { containerId, error: err.message });
+          logger.warn('Failed to update public URL in database', { 
+            containerId, 
+            publicUrl, 
+            hostPort, 
+            error: err.message 
+          });
         });
         
         logger.info('Tunnel configuration refreshed successfully', { containerId, publicUrl, hostPort });
@@ -520,12 +532,6 @@ app.post('/api/containers', authenticateToken, validateDeployContainer, asyncHan
 // Start a container
 app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (req: Request, res: Response) => {
   try {
-    // Get container name for tunnel refresh
-    const dbResult = await query(
-      `SELECT name FROM deploy_containers WHERE docker_container_id = $1`,
-      [req.params.id]
-    );
-    
     const container = docker.getContainer(req.params.id);
     await container.start();
     
@@ -540,6 +546,12 @@ app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (r
     try {
       await query(`UPDATE deploy_containers SET status = 'running', updated_at = now() WHERE docker_container_id = $1`, [req.params.id]);
     } catch {}
+    
+    // Get container name for tunnel refresh (only after successful start)
+    const dbResult = await query(
+      `SELECT name FROM deploy_containers WHERE docker_container_id = $1`,
+      [req.params.id]
+    );
     
     // Refresh tunnel configuration if container has public URL (best-effort)
     if (dbResult.rows.length > 0 && dbResult.rows[0].name) {
