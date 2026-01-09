@@ -90,7 +90,7 @@ const containerMetadata: Map<string, ContainerMetadata> = new Map();
 
 // Helper function to generate local URL
 // Note: We use localhost for local URLs as they're accessed by users on the same machine.
-// For Cloudflare tunnel origins, we use 127.0.0.1 to avoid IPv4/IPv6 resolution issues.
+// For Cloudflare tunnel origins, we use 127.0.0.1 explicitly to avoid IPv4/IPv6 resolution issues.
 function generateLocalUrl(port: number): string {
   return `http://localhost:${port}`;
 }
@@ -118,8 +118,9 @@ async function setupCloudfareTunnel(containerName: string, localPort: number, ex
       logger.info('Setting up new Cloudflare tunnel', { containerName, hostname, localPort });
     }
     
+    // Always use 127.0.0.1 for tunnel origins (not localhost) to avoid IPv4/IPv6 resolution issues.
     // When running in a container, use host.docker.internal to reach the host machine
-    // where the deployed containers are running via Docker socket
+    // where the deployed containers are running via Docker socket.
     const localServiceHost = process.env.DOCKER_HOST ? 'host.docker.internal' : '127.0.0.1';
     const localService = `http://${localServiceHost}:${localPort}`;
     
@@ -190,8 +191,15 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
       let hostPort: number | undefined;
       const ports = inspectData.NetworkSettings?.Ports;
       if (ports) {
+        const portEntries = Object.entries(ports);
+        if (portEntries.length > 1) {
+          logger.warn('Container has multiple port mappings, using first available port', { 
+            containerId, 
+            portCount: portEntries.length 
+          });
+        }
         // Get the first mapped port
-        for (const [containerPort, bindings] of Object.entries(ports)) {
+        for (const [containerPort, bindings] of portEntries) {
           if (bindings && Array.isArray(bindings) && bindings.length > 0 && bindings[0].HostPort) {
             hostPort = parseInt(bindings[0].HostPort, 10);
             break;
@@ -223,10 +231,11 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
           containerMetadata.set(containerId, meta);
         } else {
           // Create new metadata entry if it doesn't exist (e.g., after server restart)
+          // Use 'unknown' as placeholder for missing fields that will be updated on next container list/inspect
           const newMeta: ContainerMetadata = {
             containerId,
             name: containerName,
-            image: '', // Will be updated when container is inspected
+            image: inspectData.Config?.Image || 'unknown',
             port: hostPort,
             publicUrl,
             status: 'running',
