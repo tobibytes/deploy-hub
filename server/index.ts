@@ -192,6 +192,7 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
       const ports = inspectData.NetworkSettings?.Ports;
       if (ports) {
         const portEntries = Object.entries(ports);
+        // Warn if container has multiple port mappings (might indicate unexpected configuration)
         if (portEntries.length > 1) {
           const portList = portEntries.map(([p]) => p).join(', ');
           logger.warn('Container has multiple port mappings, using first available port', { 
@@ -200,12 +201,18 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
             availablePorts: portList
           });
         }
-        // Get the first mapped port
+        // Get the first mapped port with validation
         for (const [containerPort, bindings] of portEntries) {
           if (bindings && Array.isArray(bindings) && bindings.length > 0 && bindings[0].HostPort) {
-            hostPort = parseInt(bindings[0].HostPort, 10);
-            logger.info('Selected port for tunnel refresh', { containerId, containerPort, hostPort });
-            break;
+            const parsedPort = parseInt(bindings[0].HostPort, 10);
+            // Validate port is a valid number and in valid range
+            if (!isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+              hostPort = parsedPort;
+              logger.info('Selected port for tunnel refresh', { containerId, containerPort, hostPort });
+              break;
+            } else {
+              logger.warn('Invalid port number detected', { containerId, containerPort, rawPort: bindings[0].HostPort });
+            }
           }
         }
       }
