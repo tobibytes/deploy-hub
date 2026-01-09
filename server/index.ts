@@ -152,7 +152,7 @@ async function setupCloudfareTunnel(containerName: string, localPort: number, ex
 }
 
 // Helper function to refresh tunnel configuration after container restart/recreation
-async function refreshTunnelConfiguration(containerId: string, containerName: string, hostPort: number): Promise<void> {
+async function refreshTunnelConfiguration(containerId: string, containerName: string): Promise<void> {
   const enablePublicUrl = process.env.ENABLE_PUBLIC_URL !== 'false';
   if (!enablePublicUrl) {
     logger.info('Public URL disabled, skipping tunnel refresh', { containerId });
@@ -178,6 +178,28 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
     }
 
     if (existingHostname) {
+      // Get actual port from Docker inspect
+      const container = docker.getContainer(containerId);
+      const inspectData = await container.inspect();
+      
+      // Extract host port from port bindings
+      let hostPort: number | undefined;
+      const ports = inspectData.NetworkSettings?.Ports;
+      if (ports) {
+        // Get the first mapped port
+        for (const [containerPort, bindings] of Object.entries(ports)) {
+          if (bindings && Array.isArray(bindings) && bindings.length > 0 && bindings[0].HostPort) {
+            hostPort = parseInt(bindings[0].HostPort, 10);
+            break;
+          }
+        }
+      }
+      
+      if (!hostPort) {
+        logger.warn('Could not determine host port from Docker inspect, skipping tunnel refresh', { containerId });
+        return;
+      }
+      
       logger.info('Refreshing tunnel configuration for container', { 
         containerId, 
         containerName, 
@@ -205,7 +227,7 @@ async function refreshTunnelConfiguration(containerId: string, containerName: st
           logger.warn('Failed to update public URL in database', { containerId, error: err.message });
         });
         
-        logger.info('Tunnel configuration refreshed successfully', { containerId, publicUrl });
+        logger.info('Tunnel configuration refreshed successfully', { containerId, publicUrl, hostPort });
       }
     } else {
       logger.info('No existing public URL found, skipping tunnel refresh', { containerId });
@@ -472,9 +494,9 @@ app.post('/api/containers', authenticateToken, validateDeployContainer, asyncHan
 // Start a container
 app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (req: Request, res: Response) => {
   try {
-    // Get container details for tunnel refresh
+    // Get container name for tunnel refresh
     const dbResult = await query(
-      `SELECT name, port FROM deploy_containers WHERE docker_container_id = $1`,
+      `SELECT name FROM deploy_containers WHERE docker_container_id = $1`,
       [req.params.id]
     );
     
@@ -494,9 +516,9 @@ app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (r
     } catch {}
     
     // Refresh tunnel configuration if container has public URL (best-effort)
-    if (dbResult.rows.length > 0 && dbResult.rows[0].name && dbResult.rows[0].port) {
-      const containerData = dbResult.rows[0];
-      await refreshTunnelConfiguration(req.params.id, containerData.name, containerData.port);
+    if (dbResult.rows.length > 0 && dbResult.rows[0].name) {
+      const containerName = dbResult.rows[0].name;
+      await refreshTunnelConfiguration(req.params.id, containerName);
     }
     
     logger.info('Container started', { containerId: req.params.id });
@@ -752,9 +774,7 @@ app.put('/api/containers/:id/env', authenticateToken, asyncHandler(async (req: A
       await newContainer.start();
       
       // Refresh tunnel configuration for the new container (best-effort)
-      if (containerData.port) {
-        await refreshTunnelConfiguration(newContainer.id, containerData.name, containerData.port);
-      }
+      await refreshTunnelConfiguration(newContainer.id, containerData.name);
       
       logger.info('Environment variables updated and container recreated', { 
         oldContainerId: req.params.id,
@@ -788,9 +808,9 @@ app.put('/api/containers/:id/env', authenticateToken, asyncHandler(async (req: A
 // Restart a container
 app.post('/api/containers/:id/restart', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    // Verify container belongs to user and get container details
+    // Verify container belongs to user and get container name
     const result = await query(
-      `SELECT docker_container_id, name, port FROM deploy_containers WHERE docker_container_id = $1 AND user_id = $2`,
+      `SELECT name FROM deploy_containers WHERE docker_container_id = $1 AND user_id = $2`,
       [req.params.id, req.userId]
     );
     
@@ -798,7 +818,7 @@ app.post('/api/containers/:id/restart', authenticateToken, asyncHandler(async (r
       throw new AppError('Container not found', 404);
     }
     
-    const containerData = result.rows[0];
+    const containerName = result.rows[0].name;
     const container = docker.getContainer(req.params.id);
     await container.restart();
     
@@ -815,9 +835,7 @@ app.post('/api/containers/:id/restart', authenticateToken, asyncHandler(async (r
     } catch {}
     
     // Refresh tunnel configuration with current port (best-effort)
-    if (containerData.name && containerData.port) {
-      await refreshTunnelConfiguration(req.params.id, containerData.name, containerData.port);
-    }
+    await refreshTunnelConfiguration(req.params.id, containerName);
     
     logger.info('Container restarted', { containerId: req.params.id });
     res.json({ success: true, message: 'Container restarted successfully' });
