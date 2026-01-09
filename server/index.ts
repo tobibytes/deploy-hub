@@ -118,7 +118,7 @@ async function setupCloudfareTunnel(containerName: string, localPort: number, ex
     
     // When running in a container, use host.docker.internal to reach the host machine
     // where the deployed containers are running via Docker socket
-    const localServiceHost = process.env.DOCKER_HOST ? 'host.docker.internal' : 'localhost';
+    const localServiceHost = process.env.DOCKER_HOST ? 'host.docker.internal' : '127.0.0.1';
     const localService = `http://${localServiceHost}:${localPort}`;
     
     const env = {
@@ -472,6 +472,12 @@ app.post('/api/containers', authenticateToken, validateDeployContainer, asyncHan
 // Start a container
 app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (req: Request, res: Response) => {
   try {
+    // Get container details for tunnel refresh
+    const dbResult = await query(
+      `SELECT name, port FROM deploy_containers WHERE docker_container_id = $1`,
+      [req.params.id]
+    );
+    
     const container = docker.getContainer(req.params.id);
     await container.start();
     
@@ -486,6 +492,13 @@ app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (r
     try {
       await query(`UPDATE deploy_containers SET status = 'running', updated_at = now() WHERE docker_container_id = $1`, [req.params.id]);
     } catch {}
+    
+    // Refresh tunnel configuration if container has public URL (best-effort)
+    if (dbResult.rows.length > 0 && dbResult.rows[0].name && dbResult.rows[0].port) {
+      const containerData = dbResult.rows[0];
+      await refreshTunnelConfiguration(req.params.id, containerData.name, containerData.port);
+    }
+    
     logger.info('Container started', { containerId: req.params.id });
     res.json({ success: true, message: 'Container started successfully' });
   } catch (error: any) {
