@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 3000",
     "server": "tsx watch server/index.ts",
     "dev:all": "npm run server & npm run dev",
     "build": "vite build",
