@@ -89,12 +89,14 @@ interface ContainerMetadata {
 const containerMetadata: Map<string, ContainerMetadata> = new Map();
 
 // Helper function to generate local URL
+// Note: We use localhost for local URLs as they're accessed by users on the same machine.
+// For Cloudflare tunnel origins, we use 127.0.0.1 explicitly to avoid IPv4/IPv6 resolution issues.
 function generateLocalUrl(port: number): string {
   return `http://localhost:${port}`;
 }
 
 // Helper function to setup Cloudflare tunnel for a container
-async function setupCloudfareTunnel(containerName: string, localPort: number): Promise<string | null> {
+async function setupCloudfareTunnel(containerName: string, localPort: number, existingHostname?: string): Promise<string | null> {
   try {
     // Use host home directory when backend is on host machine
     const defaultCertPath = process.env.HOME ? `${process.env.HOME}/.cloudflared/cert.pem` : `${process.env.USERPROFILE}/.cloudflared/cert.pem`;
@@ -102,16 +104,24 @@ async function setupCloudfareTunnel(containerName: string, localPort: number): P
     const domain = process.env.CF_DOMAIN || 'tobiolajide.com';
     const tunnelName = process.env.CF_TUNNEL_NAME || 'lumen';
     
-    // Generate hostname from container name
-    const nameSlug = containerName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const rand = Math.random().toString(36).substring(2, 10);
-    const hostname = `dep-${nameSlug}-${rand}.${domain}`;
+    // Use existing hostname if provided, otherwise generate a new one
+    let hostname: string;
+    if (existingHostname) {
+      // Extract hostname from full URL if needed
+      hostname = existingHostname.replace(/^https?:\/\//, '');
+      logger.info('Refreshing Cloudflare tunnel with existing hostname', { containerName, hostname, localPort });
+    } else {
+      // Generate hostname from container name
+      const nameSlug = containerName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const rand = Math.random().toString(36).substring(2, 10);
+      hostname = `dep-${nameSlug}-${rand}.${domain}`;
+      logger.info('Setting up new Cloudflare tunnel', { containerName, hostname, localPort });
+    }
     
-    logger.info('Setting up Cloudflare tunnel', { containerName, hostname, localPort });
-    
+    // Always use 127.0.0.1 for tunnel origins (not localhost) to avoid IPv4/IPv6 resolution issues.
     // When running in a container, use host.docker.internal to reach the host machine
-    // where the deployed containers are running via Docker socket
-    const localServiceHost = process.env.DOCKER_HOST ? 'host.docker.internal' : 'localhost';
+    // where the deployed containers are running via Docker socket.
+    const localServiceHost = process.env.DOCKER_HOST ? 'host.docker.internal' : '127.0.0.1';
     const localService = `http://${localServiceHost}:${localPort}`;
     
     const env = {
@@ -141,6 +151,139 @@ async function setupCloudfareTunnel(containerName: string, localPort: number): P
       stdout: error.stdout 
     });
     return null;
+  }
+}
+
+// Helper function to refresh tunnel configuration after container restart/recreation
+async function refreshTunnelConfiguration(containerId: string, containerName: string): Promise<void> {
+  const enablePublicUrl = process.env.ENABLE_PUBLIC_URL !== 'false';
+  if (!enablePublicUrl) {
+    logger.info('Public URL disabled, skipping tunnel refresh', { containerId });
+    return;
+  }
+
+  try {
+    // Get existing public URL from metadata or database
+    const meta = containerMetadata.get(containerId);
+    let existingHostname: string | undefined;
+    
+    if (meta?.publicUrl) {
+      existingHostname = meta.publicUrl;
+    } else {
+      // Try to get from database
+      const dbResult = await query(
+        `SELECT public_url FROM deploy_containers WHERE docker_container_id = $1`,
+        [containerId]
+      );
+      if (dbResult.rows.length > 0 && dbResult.rows[0].public_url) {
+        existingHostname = dbResult.rows[0].public_url;
+      }
+    }
+
+    if (existingHostname) {
+      // Get actual port from Docker inspect
+      const container = docker.getContainer(containerId);
+      const inspectData = await container.inspect();
+      
+      // Extract host port from port bindings
+      // Note: We take the first mapped port. In most cases, containers expose one main port.
+      // If multiple ports are exposed, the first one in the mapping is used.
+      let hostPort: number | undefined;
+      const ports = inspectData.NetworkSettings?.Ports;
+      if (ports) {
+        const portEntries = Object.entries(ports);
+        // Warn if container has multiple port mappings (might indicate unexpected configuration)
+        if (portEntries.length > 1) {
+          const portList = portEntries.map(([p]) => p).join(', ');
+          logger.warn('Container has multiple port mappings, using first available port', { 
+            containerId, 
+            portCount: portEntries.length,
+            availablePorts: portList
+          });
+        }
+        // Get the first mapped port with validation
+        for (const [containerPort, bindings] of portEntries) {
+          if (bindings && Array.isArray(bindings) && bindings.length > 0 && bindings[0].HostPort) {
+            const parsedPort = parseInt(bindings[0].HostPort, 10);
+            // Validate port is a valid number and in valid range
+            if (!isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535) {
+              hostPort = parsedPort;
+              logger.info('Selected port for tunnel refresh', { containerId, containerPort, hostPort });
+              break;
+            } else {
+              logger.warn('Invalid port number detected', { containerId, containerPort, rawPort: bindings[0].HostPort });
+            }
+          }
+        }
+      }
+      
+      if (!hostPort) {
+        logger.warn('Could not determine host port from Docker inspect, skipping tunnel refresh', { containerId });
+        return;
+      }
+      
+      logger.info('Refreshing tunnel configuration for container', { 
+        containerId, 
+        containerName, 
+        hostPort,
+        existingHostname 
+      });
+      
+      // Refresh the tunnel with the existing hostname but new port
+      const publicUrl = await setupCloudfareTunnel(containerName, hostPort, existingHostname);
+      
+      if (publicUrl) {
+        // Update or create metadata
+        const meta = containerMetadata.get(containerId);
+        if (meta) {
+          meta.publicUrl = publicUrl;
+          meta.port = hostPort;
+          containerMetadata.set(containerId, meta);
+        } else {
+          // Create new metadata entry if it doesn't exist (e.g., after server restart)
+          // Use actual values from inspect where possible, with fallbacks for missing data
+          const containerStatus = inspectData.State?.Status || 'running';
+          const containerImage = inspectData.Config?.Image || 'unknown';
+          
+          const newMeta: ContainerMetadata = {
+            containerId,
+            name: containerName,
+            image: containerImage,
+            port: hostPort,
+            publicUrl,
+            status: containerStatus,
+            createdAt: new Date().toISOString()
+          };
+          containerMetadata.set(containerId, newMeta);
+          logger.info('Created new metadata entry for container', { containerId, image: containerImage, status: containerStatus });
+        }
+        
+        // Update database
+        await query(
+          `UPDATE deploy_containers SET public_url = $1, port = $2, updated_at = now() 
+           WHERE docker_container_id = $3`,
+          [publicUrl, hostPort, containerId]
+        ).catch((err) => {
+          logger.warn('Failed to update public URL in database', { 
+            containerId, 
+            publicUrl, 
+            hostPort, 
+            error: err.message 
+          });
+        });
+        
+        logger.info('Tunnel configuration refreshed successfully', { containerId, publicUrl, hostPort });
+      }
+    } else {
+      logger.info('No existing public URL found, skipping tunnel refresh', { containerId });
+    }
+  } catch (error: any) {
+    logger.error('Failed to refresh tunnel configuration', {
+      containerId,
+      error: error.message,
+      stack: error.stack
+    });
+    // Don't throw - tunnel refresh is best-effort
   }
 }
 
@@ -410,6 +553,19 @@ app.post('/api/containers/:id/start', validateContainerId, asyncHandler(async (r
     try {
       await query(`UPDATE deploy_containers SET status = 'running', updated_at = now() WHERE docker_container_id = $1`, [req.params.id]);
     } catch {}
+    
+    // Get container name for tunnel refresh (only after successful start)
+    const dbResult = await query(
+      `SELECT name FROM deploy_containers WHERE docker_container_id = $1`,
+      [req.params.id]
+    );
+    
+    // Refresh tunnel configuration if container has public URL (best-effort)
+    if (dbResult.rows.length > 0 && dbResult.rows[0].name) {
+      const containerName = dbResult.rows[0].name;
+      await refreshTunnelConfiguration(req.params.id, containerName);
+    }
+    
     logger.info('Container started', { containerId: req.params.id });
     res.json({ success: true, message: 'Container started successfully' });
   } catch (error: any) {
@@ -662,6 +818,9 @@ app.put('/api/containers/:id/env', authenticateToken, asyncHandler(async (req: A
       // Start the new container
       await newContainer.start();
       
+      // Refresh tunnel configuration for the new container (best-effort)
+      await refreshTunnelConfiguration(newContainer.id, containerData.name);
+      
       logger.info('Environment variables updated and container recreated', { 
         oldContainerId: req.params.id,
         newContainerId: newContainer.id,
@@ -694,9 +853,9 @@ app.put('/api/containers/:id/env', authenticateToken, asyncHandler(async (req: A
 // Restart a container
 app.post('/api/containers/:id/restart', authenticateToken, asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    // Verify container belongs to user
+    // Verify container belongs to user and get container name
     const result = await query(
-      `SELECT docker_container_id FROM deploy_containers WHERE docker_container_id = $1 AND user_id = $2`,
+      `SELECT name FROM deploy_containers WHERE docker_container_id = $1 AND user_id = $2`,
       [req.params.id, req.userId]
     );
     
@@ -704,6 +863,7 @@ app.post('/api/containers/:id/restart', authenticateToken, asyncHandler(async (r
       throw new AppError('Container not found', 404);
     }
     
+    const containerName = result.rows[0].name;
     const container = docker.getContainer(req.params.id);
     await container.restart();
     
@@ -718,6 +878,9 @@ app.post('/api/containers/:id/restart', authenticateToken, asyncHandler(async (r
     try {
       await query(`UPDATE deploy_containers SET status = 'running', updated_at = now() WHERE docker_container_id = $1`, [req.params.id]);
     } catch {}
+    
+    // Refresh tunnel configuration with current port (best-effort)
+    await refreshTunnelConfiguration(req.params.id, containerName);
     
     logger.info('Container restarted', { containerId: req.params.id });
     res.json({ success: true, message: 'Container restarted successfully' });
