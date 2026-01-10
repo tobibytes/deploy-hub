@@ -108,7 +108,7 @@ export default function Auth() {
             <div className="p-2 rounded-xl gradient-primary">
               <Cloud className="h-8 w-8 text-primary-foreground" />
             </div>
-            <span className="text-2xl font-bold gradient-text">CloudDeploy</span>
+            <span className="text-2xl font-bold gradient-text">Rig</span>
           </div>
           <p className="text-muted-foreground">Deploy containers in seconds</p>
         </div>

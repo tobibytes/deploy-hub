@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <div className="p-2 rounded-xl gradient-primary">
               <Cloud className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold gradient-text">CloudDeploy</span>
+            <span className="text-xl font-bold gradient-text">Rig</span>
           </Link>
         </div>
 

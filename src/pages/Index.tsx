@@ -49,7 +49,7 @@ export default function Index() {
             <div className="p-2 rounded-xl gradient-primary">
               <Cloud className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold gradient-text">CloudDeploy</span>
+            <span className="text-xl font-bold gradient-text">Rig</span>
           </Link>
           <div className="flex items-center gap-4">
             <Link to="/auth">
@@ -267,10 +267,10 @@ export default function Index() {
               <div className="p-1.5 rounded-lg gradient-primary">
                 <Cloud className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="font-semibold gradient-text">CloudDeploy</span>
+              <span className="font-semibold gradient-text">Rig</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2024 CloudDeploy. All rights reserved.
+              © 2024 Rig. All rights reserved.
             </p>
           </div>
         </div>

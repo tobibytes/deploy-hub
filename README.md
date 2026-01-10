@@ -1,6 +1,6 @@
-# Welcome to your Lovable project
+# Rig - Docker Container Management Platform
 
-## Project info
+A full-stack application for managing Docker containers with a beautiful UI. Deploy, manage, and monitor Docker containers locally with ease.
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 

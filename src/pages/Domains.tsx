@@ -106,7 +106,7 @@ export default function Domains() {
   };
 
   const generateVerificationToken = () => {
-    return `clouddeploy-verify-${Math.random().toString(36).substring(2, 15)}`;
+    return `rig-verify-${Math.random().toString(36).substring(2, 15)}`;
   };
 
   const createDomain = async () => {
@@ -410,7 +410,7 @@ export default function Domains() {
                         </div>
                         <div className="flex items-center justify-between p-2 rounded bg-background/50">
                           <span className="text-muted-foreground">Type: TXT</span>
-                          <span>_clouddeploy</span>
+                          <span>_rig</span>
                           <span className="text-primary truncate max-w-[150px]">{domain.verification_token}</span>
                           <Button 
                             variant="ghost" 
