@@ -11,7 +11,8 @@ import {
   ArrowRight,
   Github,
   Terminal,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 
 export default function Index() {
@@ -73,14 +74,13 @@ export default function Index() {
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight animate-slide-up">
-            Ship Your Code
+            Deploy Docker Containers
             <br />
-            <span className="gradient-text">Not Infrastructure</span>
+            <span className="gradient-text">Without the Hassle</span>
           </h1>
           
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            Deploy Docker containers with custom domains in seconds. 
-            No infrastructure to manage, no servers to configure. Just push and deploy.
+            Deploy any Docker image in seconds. Manage containers, view logs, and expose them to the internet with automatic public URLs.
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up" style={{ animationDelay: '0.2s' }}>
@@ -97,35 +97,70 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Terminal Preview */}
-        <div className="max-w-3xl mx-auto mt-20 animate-slide-up" style={{ animationDelay: '0.3s' }}>
-          <div className="glass rounded-2xl overflow-hidden border border-border/50">
-            <div className="flex items-center gap-2 px-4 py-3 bg-secondary/50 border-b border-border/50">
-              <div className="w-3 h-3 rounded-full bg-destructive/80" />
-              <div className="w-3 h-3 rounded-full bg-warning/80" />
-              <div className="w-3 h-3 rounded-full bg-success/80" />
-              <span className="ml-2 text-sm text-muted-foreground font-mono">terminal</span>
+        {/* How It Works Preview */}
+        <div className="max-w-4xl mx-auto mt-20 animate-slide-up" style={{ animationDelay: '0.3s' }}>
+          <div className="space-y-4">
+            {/* Step 1 */}
+            <div className="glass rounded-2xl p-6 border border-border/50 flex gap-4 items-start">
+              <div className="flex-shrink-0">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/20">
+                  <span className="text-lg font-bold text-primary">1</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-lg mb-2">Choose a Docker Image</h4>
+                <p className="text-muted-foreground">Pick any Docker image from Docker Hub or your private registry. Nginx, Node.js, PostgreSQL, or anything else you need.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-3 py-1 rounded-full bg-secondary/50 text-sm font-mono">nginx:latest</span>
+                  <span className="px-3 py-1 rounded-full bg-secondary/50 text-sm font-mono">node:18-alpine</span>
+                  <span className="px-3 py-1 rounded-full bg-secondary/50 text-sm font-mono">postgres:15</span>
+                </div>
+              </div>
             </div>
-            <div className="p-6 font-mono text-sm space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-primary">$</span>
-                <span>clouddeploy create my-app --image nginx:latest</span>
+
+            {/* Step 2 */}
+            <div className="glass rounded-2xl p-6 border border-border/50 flex gap-4 items-start">
+              <div className="flex-shrink-0">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/20">
+                  <span className="text-lg font-bold text-accent">2</span>
+                </div>
               </div>
-              <div className="text-muted-foreground">
-                ⣾ Creating container...
+              <div className="flex-1">
+                <h4 className="font-semibold text-lg mb-2">Deploy in Seconds</h4>
+                <p className="text-muted-foreground">Click deploy and your container starts automatically. We handle port allocation, networking, and resource management for you.</p>
+                <div className="mt-3 font-mono text-sm text-muted-foreground bg-secondary/30 rounded-lg p-3">
+                  🚀 Container deployed • Port: 27067 • Status: Running
+                </div>
               </div>
-              <div className="text-success">
-                ✓ Container created successfully!
+            </div>
+
+            {/* Step 3 */}
+            <div className="glass rounded-2xl p-6 border border-border/50 flex gap-4 items-start">
+              <div className="flex-shrink-0">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success/20">
+                  <span className="text-lg font-bold text-success">3</span>
+                </div>
               </div>
-              <div className="text-muted-foreground">
-                ⣾ Deploying to cloud...
+              <div className="flex-1">
+                <h4 className="font-semibold text-lg mb-2">Share with a Public URL</h4>
+                <p className="text-muted-foreground">Every container gets an automatic public URL via Cloudflare Tunnel. No firewall setup needed—access from anywhere instantly.</p>
+                <div className="mt-3 flex items-center gap-2 font-mono text-sm text-primary bg-secondary/30 rounded-lg p-3 truncate">
+                  <Globe className="h-4 w-4 flex-shrink-0" />
+                  https://dep-na9-9d2jab0u.tobiolajide.com
+                </div>
               </div>
-              <div className="text-success">
-                ✓ Deployed to: https://my-app.clouddeploy.app
+            </div>
+
+            {/* Step 4 */}
+            <div className="glass rounded-2xl p-6 border border-border/50 flex gap-4 items-start">
+              <div className="flex-shrink-0">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning/20">
+                  <span className="text-lg font-bold text-warning">4</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 pt-2">
-                <span className="text-primary">$</span>
-                <span className="animate-pulse">_</span>
+              <div className="flex-1">
+                <h4 className="font-semibold text-lg mb-2">Manage & Monitor</h4>
+                <p className="text-muted-foreground">View logs, manage environment variables, restart containers, or set custom domains. Full control from a beautiful dashboard.</p>
               </div>
             </div>
           </div>
@@ -136,9 +171,9 @@ export default function Index() {
       <section className="relative z-10 border-t border-border/50 bg-card/30">
         <div className="container mx-auto px-4 py-24">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Everything You Need to Ship</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Built for Developers</h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              A complete platform for deploying, managing, and scaling your containers.
+              Everything you need to deploy and manage Docker containers locally with a beautiful dashboard.
             </p>
           </div>
 
@@ -147,9 +182,9 @@ export default function Index() {
               <div className="p-3 rounded-xl bg-primary/10 w-fit mb-6 group-hover:scale-110 transition-transform">
                 <Container className="h-6 w-6 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-3">Docker Containers</h3>
+              <h3 className="text-xl font-semibold mb-3">Deploy Any Image</h3>
               <p className="text-muted-foreground">
-                Deploy any Docker image with one click. Full support for private registries and custom configurations.
+                Deploy from Docker Hub or private registries. Set resource limits, ports, and environment variables with ease.
               </p>
             </div>
 
@@ -157,9 +192,9 @@ export default function Index() {
               <div className="p-3 rounded-xl bg-accent/10 w-fit mb-6 group-hover:scale-110 transition-transform">
                 <Globe className="h-6 w-6 text-accent" />
               </div>
-              <h3 className="text-xl font-semibold mb-3">Custom Domains</h3>
+              <h3 className="text-xl font-semibold mb-3">Instant Public URLs</h3>
               <p className="text-muted-foreground">
-                Connect your own domains with automatic SSL. Simple DNS configuration with instant propagation.
+                Every container automatically gets a public URL via Cloudflare Tunnel. No port forwarding, no firewall hassles.
               </p>
             </div>
 
@@ -167,9 +202,39 @@ export default function Index() {
               <div className="p-3 rounded-xl bg-success/10 w-fit mb-6 group-hover:scale-110 transition-transform">
                 <Shield className="h-6 w-6 text-success" />
               </div>
-              <h3 className="text-xl font-semibold mb-3">Secure by Default</h3>
+              <h3 className="text-xl font-semibold mb-3">Full Control</h3>
               <p className="text-muted-foreground">
-                Every deployment comes with SSL, isolated networking, and enterprise-grade security built in.
+                View logs, manage environment variables, restart containers, or connect custom domains in seconds.
+              </p>
+            </div>
+
+            <div className="p-8 rounded-2xl glass border border-border/50 hover:border-primary/30 transition-all group">
+              <div className="p-3 rounded-xl bg-primary/10 w-fit mb-6 group-hover:scale-110 transition-transform">
+                <Terminal className="h-6 w-6 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3">Real-Time Logs</h3>
+              <p className="text-muted-foreground">
+                Stream container logs live. Debug faster with full access to container output and error messages.
+              </p>
+            </div>
+
+            <div className="p-8 rounded-2xl glass border border-border/50 hover:border-accent/30 transition-all group">
+              <div className="p-3 rounded-xl bg-accent/10 w-fit mb-6 group-hover:scale-110 transition-transform">
+                <Zap className="h-6 w-6 text-accent" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3">Lightweight & Fast</h3>
+              <p className="text-muted-foreground">
+                No heavy infrastructure. Works on your local machine or a VPS. Start deploying in seconds.
+              </p>
+            </div>
+
+            <div className="p-8 rounded-2xl glass border border-border/50 hover:border-success/30 transition-all group">
+              <div className="p-3 rounded-xl bg-success/10 w-fit mb-6 group-hover:scale-110 transition-transform">
+                <RefreshCw className="h-6 w-6 text-success" />
+              </div>
+              <h3 className="text-xl font-semibold mb-3">Deployment History</h3>
+              <p className="text-muted-foreground">
+                Track all your deployments, view logs, and rollback when needed. Full audit trail included.
               </p>
             </div>
           </div>
@@ -183,8 +248,7 @@ export default function Index() {
             Ready to Deploy?
           </h2>
           <p className="text-xl text-muted-foreground mb-10">
-            Join developers who ship faster with CloudDeploy. 
-            No credit card required.
+            Start deploying Docker containers in seconds. No credit card required.
           </p>
           <Link to="/auth">
             <Button size="xl" variant="glow" className="text-lg px-10">
