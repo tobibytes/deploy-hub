@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Cloud, Loader2, Container, Globe } from 'lucide-react';
+import { Loader2, Container, Globe } from 'lucide-react';
 import { z } from 'zod';
 
 const authSchema = z.object({
@@ -105,9 +105,7 @@ export default function Auth() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-xl gradient-primary">
-              <Cloud className="h-8 w-8 text-primary-foreground" />
-            </div>
+            <img src="/logo.png" alt="Rig" className="h-10 w-10" />
             <span className="text-2xl font-bold gradient-text">Rig</span>
           </div>
           <p className="text-muted-foreground">Deploy containers in seconds</p>

@@ -30,12 +30,15 @@ try {
 app.use(cors());
 app.use(express.json({ 
   limit: '10mb',
-  // Handle JSON parsing errors
+  // Handle JSON parsing errors gracefully
   verify: (req, res, buf, encoding) => {
-    try {
-      JSON.parse(buf.toString());
-    } catch (e) {
-      throw new AppError('Invalid JSON in request body', 400);
+    // Only validate if there's actual body content
+    if (buf && buf.length > 0) {
+      try {
+        JSON.parse(buf.toString());
+      } catch (e) {
+        throw new AppError('Invalid JSON in request body', 400);
+      }
     }
   }
 }));

@@ -3,7 +3,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { 
-  Cloud, 
   Container, 
   Globe, 
   Zap, 
@@ -46,9 +45,7 @@ export default function Index() {
       <header className="relative z-10 border-b border-border/50 bg-background/80 backdrop-blur-lg">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <div className="p-2 rounded-xl gradient-primary">
-              <Cloud className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <img src="/logo.png" alt="Rig" className="h-8 w-8" />
             <span className="text-xl font-bold gradient-text">Rig</span>
           </Link>
           <div className="flex items-center gap-4">
@@ -264,9 +261,7 @@ export default function Index() {
         <div className="container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg gradient-primary">
-                <Cloud className="h-4 w-4 text-primary-foreground" />
-              </div>
+              <img src="/logo.png" alt="Rig" className="h-6 w-6" />
               <span className="font-semibold gradient-text">Rig</span>
             </div>
             <p className="text-sm text-muted-foreground">

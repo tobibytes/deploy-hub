@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { 
-  Cloud, 
   LayoutDashboard, 
   Container, 
   Settings, 
@@ -47,9 +46,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       <aside className="hidden lg:flex flex-col w-64 border-r border-border bg-card/50">
         <div className="p-6 border-b border-border">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="p-2 rounded-xl gradient-primary">
-              <Cloud className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <img src="/logo.png" alt="Rig" className="h-8 w-8" />
             <span className="text-xl font-bold gradient-text">Rig</span>
           </Link>
         </div>
@@ -101,10 +98,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-lg border-b border-border">
         <div className="flex items-center justify-between p-4">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg gradient-primary">
-              <Cloud className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold gradient-text">CloudDeploy</span>
+            <img src="/logo.png" alt="Rig" className="h-6 w-6" />
+            <span className="text-lg font-bold gradient-text">Rig</span>
           </Link>
           <Button
             variant="ghost"
