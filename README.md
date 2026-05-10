@@ -1,122 +1,78 @@
-# Rig - Docker Container Management Platform
+# deploy-hub
 
-A full-stack application for managing Docker containers with a beautiful UI. Deploy, manage, and monitor Docker containers locally with ease.
+A full-stack Docker container management platform — pull any public image, launch it, wire up a local port, watch its logs, manage env vars, and expose it on the public internet via Cloudflare Tunnel, all from a React UI.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Think of it as a personal mini-PaaS: it talks to the Docker engine directly, persists deployments to Postgres, and gates everything behind JWT auth.
 
-## How can I edit this code?
+## What it does
 
-There are several ways of editing your application.
+- **Container lifecycle** — deploy from a Docker image, start / stop / restart / delete, set CPU + memory limits, auto-allocate host ports.
+- **Per-container env vars** — read and update environment without redeploying.
+- **Logs** — tail container stdout/stderr.
+- **Deployment history** — every action is persisted; users see their containers, admins see everyone's.
+- **Auth + roles** — JWT-based signup/signin, `requireAdmin` middleware on admin routes.
+- **Monitoring UI** — stats, log feed, and a clean dashboard. See [`MONITORING_UI_GUIDE.md`](./MONITORING_UI_GUIDE.md).
+- **Public exposure** — `make public` provisions a Cloudflare Tunnel + DNS record and prints a public HTTPS URL.
 
-**Use Lovable**
+## API surface
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/api/auth/signup` / `/signin` / `/change-password` | JWT auth |
+| `GET`  | `/api/auth/me` | Current user |
+| `GET`  | `/api/containers` | List all (admin) |
+| `GET`  | `/api/app/containers` | List the caller's containers |
+| `POST` | `/api/containers` | Deploy a new container from an image |
+| `GET`  | `/api/containers/:id` | Inspect |
+| `POST` | `/api/containers/:id/start` / `/stop` / `/restart` | Lifecycle |
+| `DELETE` | `/api/containers/:id` | Remove |
+| `GET`  | `/api/containers/:id/logs` | Tail logs |
+| `GET` / `PUT` | `/api/containers/:id/env` | Env var management |
+| `GET`  | `/api/deployments` | Deployment history |
+| `GET`  | `/api/monitoring/{logs,stats}` | App-level monitoring |
+| `GET`  | `/api/admin/{logs,stats}` | Admin-only views |
 
-Changes made via Lovable will be committed automatically to this repo.
+Full handler implementations are in [`server/index.ts`](./server/index.ts). See [`DEPLOYMENT_README.md`](./DEPLOYMENT_README.md) and [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) for deeper docs.
 
-**Use your preferred IDE**
+## Architecture
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+React (Vite, shadcn/ui)  ──HTTP──▶  Express server  ──dockerode──▶  Docker Engine
+                                         │
+                                         ├──▶  Postgres (deployments, users, env)
+                                         │
+                                         └──▶  Cloudflare Tunnel (optional public URL)
 ```
 
-**Edit a file directly in GitHub**
+- **`src/`** — React SPA: pages for Dashboard, Containers, Deployments, Domains, Monitoring, Admin, Settings, Auth.
+- **`server/`** — Express + TypeScript backend; `dockerode` for Docker control, `get-port` for auto-allocation, JWT middleware.
+- **`migrations/`** — Postgres schema (`001_initial_schema.sql`, `002_add_public_url.sql`, `003_add_container_port.sql`).
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Run it
 
-**Use GitHub Codespaces**
+Prereqs: Node 18+, Docker Engine running, Postgres reachable.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
-
-## Expose locally on your domain using Cloudflare Tunnel
-
-This repo includes a one-command flow to expose your local app through Cloudflare Tunnel without touching the Cloudflare dashboard.
-
-### One-time setup
-
-1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
-2. Authenticate once (writes cert to `~/.cloudflared/cert.pem`):
-	```sh
-	cloudflared tunnel login
-	```
-
-### Run with your domain
-
-1. Optionally set a hostname. If omitted, the script generates a random subdomain on tobiolajide.com each run (e.g., lumen-ab12cd34.tobiolajide.com):
-	```sh
-	export CF_HOSTNAME=myapp.tobiolajide.com   # optional
-	```
-2. Start the public URL (idempotent – creates tunnel, DNS, config, and runs cloudflared):
-	```sh
-	make public
-	```
-3. Open the printed URL (the script always prints it):
-	```
-	Public URL: https://<your-random-or-custom-hostname>
-	```
-
-### Defaults and customization
-
-- Defaults: `CF_TUNNEL_NAME=lumen`, `CF_HOSTNAME` auto-generated random subdomain on `tobiolajide.com`, `LOCAL_SERVICE=http://localhost:8080`, `CF_CONFIG_DIR=~/.cloudflared`, `CF_CONFIG_FILE=~/.cloudflared/config.yml`.
-- Override by exporting env vars before `make public` (e.g., `export CF_HOSTNAME=myapp.tobiolajide.com`).
-- Tunnel UUID is cached in `.forgequeue/tunnel_uuid`; PID in `.forgequeue/cloudflared.pid`; logs in `.forgequeue/cloudflared.log`.
-
-### Stop / status
-
-- Stop: `make public-stop`
-- Status: `make public-status`
-
-### How it works
-
-- Ensures cloudflared is installed and `cloudflared tunnel login` was run (checks `~/.cloudflared/cert.pem`).
-- Verifies the local service is reachable before starting.
-- Reuses or creates the tunnel, writes `config.yml`, ensures DNS via `cloudflared tunnel route dns`, then starts the tunnel and prints the URL.
-
-Optional: To run at login on macOS, you can install the cloudflared service (not required for normal use):
 ```sh
-cloudflared service install
+npm install
+npm run dev:all     # starts the Vite frontend (:3000) and the API (:3001) together
 ```
+
+### Expose it publicly with Cloudflare Tunnel
+
+```sh
+# One-time: cloudflared tunnel login
+export CF_HOSTNAME=myapp.tobiolajide.com  # optional; else a random subdomain
+make public                                # idempotent: tunnel + DNS + run
+make public-status
+make public-stop
+```
+
+The tunnel UUID is cached in `.forgequeue/tunnel_uuid`; logs in `.forgequeue/cloudflared.log`.
+
+## Stack
+
+**Frontend** — Vite · React · TypeScript · Tailwind · shadcn/ui · Radix · React Hook Form · TanStack Query
+
+**Backend** — Node.js · Express · TypeScript · `dockerode` · `jsonwebtoken` · `pg`
+
+**Infra** — Docker · Postgres · Cloudflare Tunnel · custom `Dockerfile`
