@@ -61,8 +61,8 @@ describe('containerSpec', () => {
     }
   });
 
-  it('refuses extra privileges', () => {
-    expect(spec.HostConfig?.SecurityOpt).toContain('no-new-privileges');
+  it('refuses extra privileges, spelling the value out', () => {
+    expect(spec.HostConfig?.SecurityOpt).toEqual(['no-new-privileges:true']);
     expect(spec.HostConfig?.Privileged).toBe(false);
   });
 

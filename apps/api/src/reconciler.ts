@@ -10,8 +10,17 @@ import type { AppsService } from './apps-service.js';
 export interface ReconcileSummary {
   checked: number;
   statusChanges: number;
-  orphansRemoved: number;
+  unknown: number;
   restarted: number;
+}
+
+/** A container carrying Rig's label that has no row behind it. */
+export interface UnknownContainer {
+  name: string;
+  image: string;
+  status: string;
+  appName: string | null;
+  seenAt: string;
 }
 
 /**
@@ -22,6 +31,7 @@ export interface ReconcileSummary {
 export class Reconciler {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private unknownContainers: UnknownContainer[] = [];
 
   constructor(
     private readonly db: Db,
@@ -46,10 +56,15 @@ export class Reconciler {
     this.timer = null;
   }
 
+  /** Containers wearing Rig's label that no app owns. Left running on purpose. */
+  unknown(): UnknownContainer[] {
+    return [...this.unknownContainers];
+  }
+
   async runOnce(): Promise<ReconcileSummary> {
-    if (this.running) return { checked: 0, statusChanges: 0, orphansRemoved: 0, restarted: 0 };
+    if (this.running) return { checked: 0, statusChanges: 0, unknown: 0, restarted: 0 };
     this.running = true;
-    const summary: ReconcileSummary = { checked: 0, statusChanges: 0, orphansRemoved: 0, restarted: 0 };
+    const summary: ReconcileSummary = { checked: 0, statusChanges: 0, unknown: 0, restarted: 0 };
 
     try {
       const [rows, containers] = await Promise.all([
@@ -112,19 +127,31 @@ export class Reconciler {
         }
       }
 
-      // A container carrying Rig's label with no row behind it is left over from a
-      // deleted app. Remove it so the hostname really does stop resolving.
+      // A container carrying Rig's label with no row behind it gets left alone
+      // and listed, rather than removed. It may be something started by hand,
+      // and deleting it would be the one mistake here that cannot be undone.
       const knownIds = new Set(rows.map((r) => r.id));
+      const unknown: UnknownContainer[] = [];
       for (const container of containers) {
         const appId = container.Labels?.[APP_ID_LABEL];
-        const appName = container.Labels?.[APP_NAME_LABEL];
         if (appId && knownIds.has(appId)) continue;
-        if (!appName) continue;
-        this.log.warn({ container: appName }, 'removing orphan container');
-        await this.engine.removeContainer(appName, appId);
-        await this.apps.record(null, appName, null, 'reconcile', 'ok', 'Removed a leftover container');
-        summary.orphansRemoved++;
+        unknown.push({
+          name: container.Names?.[0]?.replace(/^\//, '') ?? container.Id.slice(0, 12),
+          image: container.Image ?? 'unknown',
+          status: container.Status ?? '',
+          appName: container.Labels?.[APP_NAME_LABEL] ?? null,
+          seenAt: new Date().toISOString(),
+        });
       }
+
+      // Only say something when the set changes, rather than every 30 seconds.
+      const before = this.unknownContainers.map((c) => c.name).sort().join(',');
+      const after = unknown.map((c) => c.name).sort().join(',');
+      if (before !== after && unknown.length > 0) {
+        this.log.warn({ containers: unknown.map((c) => c.name) }, 'containers with a rig label and no app');
+      }
+      this.unknownContainers = unknown;
+      summary.unknown = unknown.length;
 
       return summary;
     } finally {

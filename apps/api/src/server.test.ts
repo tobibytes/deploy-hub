@@ -208,6 +208,7 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
     ['GET', '/api/apps'],
     ['POST', '/api/apps'],
     ['GET', '/api/activity'],
+    ['GET', '/api/unknown-containers'],
     ['GET', '/api/apps/11111111-1111-1111-1111-111111111111'],
     ['PATCH', '/api/apps/11111111-1111-1111-1111-111111111111'],
     ['DELETE', '/api/apps/11111111-1111-1111-1111-111111111111'],
@@ -353,6 +354,17 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
     const mine = await fastify.inject({ method: 'GET', url: '/api/apps', headers: { cookie: otherCookie } });
     const names = (mine.json() as { name: string }[]).map((a) => a.name);
     expect(names).toEqual(['members-app']);
+  });
+
+  it('lists unknown containers rather than removing them', async () => {
+    const response = await fastify.inject({
+      method: 'GET',
+      url: '/api/unknown-containers',
+      headers: { cookie: ownerCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    // The stub engine reports no containers, so the list is empty but present.
+    expect(response.json()).toEqual([]);
   });
 
   it('says traffic is off rather than showing zeroes when Traefik has no metrics', async () => {

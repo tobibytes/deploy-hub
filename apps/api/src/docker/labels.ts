@@ -94,7 +94,9 @@ export function containerSpec(input: ContainerSpecInput): Dockerode.ContainerCre
       PidsLimit: PIDS_LIMIT,
       CapDrop: ['ALL'],
       CapAdd: [...ALLOWED_CAPABILITIES],
-      SecurityOpt: ['no-new-privileges'],
+      // The explicit form. Docker accepts the bare name, but writing the
+      // value out is what the hosting guide asks for and leaves no doubt.
+      SecurityOpt: ['no-new-privileges:true'],
       Privileged: false,
       // Keeps one noisy app from filling the Pi's SD card.
       LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },

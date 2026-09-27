@@ -4,6 +4,9 @@
 #
 #   docker compose --env-file .env -f compose.yml up -d
 #
+# Two socket proxies, not one. Traefik only ever reads, and Rig can manage
+# containers but nothing else. Neither holds /var/run/docker.sock, and a
+# compromise of Traefik cannot create a container.
 name: rig
 
 x-logging: &logging
@@ -11,6 +14,24 @@ x-logging: &logging
   options:
     max-size: "10m"
     max-file: "3"
+
+# Everything both proxies refuse. Listed once so neither can quietly gain a
+# permission the other has.
+x-socket-denied: &socket-denied
+  AUTH: 0
+  BUILD: 0
+  COMMIT: 0
+  CONFIGS: 0
+  DISTRIBUTION: 0
+  EXEC: 0
+  NODES: 0
+  PLUGINS: 0
+  SECRETS: 0
+  SERVICES: 0
+  SESSION: 0
+  SWARM: 0
+  SYSTEM: 0
+  TASKS: 0
 
 services:
   # Reads Docker labels and routes each hostname to the right container. This is
@@ -20,28 +41,31 @@ services:
     image: traefik:v3.6
     restart: unless-stopped
     depends_on:
-      docker-proxy:
+      docker-proxy-ro:
         condition: service_started
     command:
       - --global.checknewversion=false
       - --global.sendanonymoususage=false
       - --log.level=INFO
-      - --accesslog=false
+      - --accesslog=true
       - --api.dashboard=false
       - --api.insecure=false
       - --ping=true
-      # Per-router request counts, status codes, sizes and latency, on the
-      # traefik entrypoint so they are never routed from outside. Rig scrapes
+      # Per-router request counts, status codes, sizes and latency. Rig scrapes
       # these to show per-app traffic without putting anything in the apps.
       - --metrics.prometheus=true
       - --metrics.prometheus.addRoutersLabels=true
       - --metrics.prometheus.entryPoint=traefik
       - --entrypoints.web.address=:80
-      # Not published to the host in production, and never routed by
-      # cloudflared, so /ping is reachable from Rig and nowhere else.
+      # cloudflared is the only thing that reaches Traefik, so its forwarded
+      # headers are the ones to believe. Without this the client address is
+      # always cloudflared's own.
+      - --entrypoints.web.forwardedHeaders.trustedIPs=172.16.0.0/12
+      # Carries /ping and /metrics. Not published to the host and never routed
+      # by cloudflared, so both are reachable from Rig and nowhere else.
       - --entrypoints.traefik.address=:8080
       - --providers.docker=true
-      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      - --providers.docker.endpoint=tcp://docker-proxy-ro:2375
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=rig_apps
     ports:
@@ -52,45 +76,56 @@ services:
       - edge
       - web
       - apps
-      - internal
+      - socket-ro
     logging: *logging
 
-  # The only container that touches /var/run/docker.sock. It exposes a narrow
-  # slice of the Docker API over TCP, so neither Rig nor Traefik ever holds the
-  # socket itself.
-  docker-proxy:
+  # Traefik's view of Docker: read only. It needs to list containers and
+  # networks and to follow the event stream, and nothing else. POST is off, so
+  # nothing reached through it can change anything.
+  docker-proxy-ro:
     image: tecnativa/docker-socket-proxy:0.3.0
     restart: unless-stopped
     environment:
-      # Rig needs to list, create, start, stop and remove containers, pull
-      # images and make its network.
+      <<: *socket-denied
       CONTAINERS: 1
-      IMAGES: 1
       NETWORKS: 1
-      INFO: 1
       EVENTS: 1
-      PING: 1
       VERSION: 1
-      POST: 1
-      # Everything else stays off.
-      BUILD: 0
-      COMMIT: 0
-      CONFIGS: 0
-      DISTRIBUTION: 0
-      EXEC: 0
-      NODES: 0
-      PLUGINS: 0
-      SECRETS: 0
-      SERVICES: 0
-      SESSION: 0
-      SWARM: 0
-      SYSTEM: 0
-      TASKS: 0
+      PING: 1
+      IMAGES: 0
       VOLUMES: 0
+      INFO: 0
+      POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - internal
+      - socket-ro
+    logging: *logging
+
+  # Rig's view of Docker: enough to run apps, and no more. It can create, start,
+  # stop and remove containers, pull images and make its network. It cannot exec
+  # into anything, read secrets, or touch the swarm.
+  docker-proxy-rw:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      <<: *socket-denied
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      EVENTS: 1
+      INFO: 1
+      VERSION: 1
+      PING: 1
+      POST: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+      ALLOW_RESTARTS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket-rw
     logging: *logging
 
   postgres:
@@ -109,7 +144,7 @@ services:
       retries: 20
       start_period: 20s
     networks:
-      - internal
+      - db
     logging: *logging
 
   rig:
@@ -122,20 +157,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      docker-proxy:
+      docker-proxy-rw:
         condition: service_started
     environment:
       NODE_ENV: production
       BASE_DOMAIN: ${BASE_DOMAIN:?set BASE_DOMAIN in .env}
       RIG_HOSTNAME: ${RIG_HOSTNAME:-rig.${BASE_DOMAIN}}
       EXTRA_RESERVED_NAMES: ${EXTRA_RESERVED_NAMES:-}
+      GUARDED_DOMAINS: ${GUARDED_DOMAINS:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-rig}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rig}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       ENV_ENCRYPTION_KEY: ${ENV_ENCRYPTION_KEY:?set ENV_ENCRYPTION_KEY in .env}
       OWNER_EMAIL: ${OWNER_EMAIL:?set OWNER_EMAIL in .env}
       OWNER_PASSWORD: ${OWNER_PASSWORD:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
-      DOCKER_HOST_URL: http://docker-proxy:2375
+      DOCKER_HOST_URL: http://docker-proxy-rw:2375
       APPS_NETWORK: rig_apps
       TRAEFIK_ENTRYPOINT: web
       TRAEFIK_PING_URL: http://traefik:8080/ping
@@ -149,8 +185,9 @@ services:
       traefik.http.routers.rig.service: rig
       traefik.http.services.rig.loadbalancer.server.port: "3001"
     networks:
-      - internal
       - web
+      - socket-rw
+      - db
     logging: *logging
 
   # Outbound-only connection to Cloudflare, so the home network needs no open
@@ -175,24 +212,33 @@ services:
 
 networks:
   # Apps live here, and Traefik is the only other thing on it. They cannot reach
-  # Postgres or the Rig API.
+  # Postgres, the Docker proxies or the Rig API.
   apps:
     name: rig_apps
     driver: bridge
     attachable: true
-  # Traefik to the Rig container.
+  # Traefik to the Rig container, for the dashboard's own route.
   web:
     name: rig_web
     driver: bridge
-  # Rig to Postgres and the Docker proxy. No route out to the internet.
-  internal:
-    name: rig_internal
-    driver: bridge
-    internal: true
   # Cloudflared to Traefik.
   edge:
     name: rig_edge
     driver: bridge
+  # The three below are internal, so nothing on them reaches the internet and
+  # nothing outside them reaches the Docker API or the database.
+  socket-ro:
+    name: rig_socket_ro
+    driver: bridge
+    internal: true
+  socket-rw:
+    name: rig_socket_rw
+    driver: bridge
+    internal: true
+  db:
+    name: rig_db
+    driver: bridge
+    internal: true
 
 volumes:
   postgres-data:

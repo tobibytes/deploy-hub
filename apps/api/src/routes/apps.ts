@@ -55,6 +55,14 @@ export const appRoutes =
 
     fastify.get('/activity', async (_request, reply) => reply.send(await apps.recentActivity()));
 
+    /**
+     * Containers wearing Rig's label that no app owns. Rig leaves them running
+     * and lists them here, because one of them may be something started by hand.
+     */
+    fastify.get('/unknown-containers', async (_request, reply) =>
+      reply.send(services.reconciler.unknown()),
+    );
+
     /* ----------------------------- one app ----------------------------- */
 
     fastify.register(async (scope) => {

@@ -171,6 +171,39 @@ MEM="$(docker inspect -f '{{.HostConfig.Memory}}' "rig-$APP_NAME")"
 [[ "$MEM" == "268435456" ]] || fail "The memory limit is $MEM, expected 268435456."
 pass "The memory limit is 256 MB"
 
+step "Checking what an app can reach"
+# From section 11 of the hosting guide: an app must not be able to reach the
+# database or the Docker API, whatever it does.
+# curl already prints 000 when it cannot connect, so the fallback is only for
+# the case where docker run itself fails. Appending a second 000 would make
+# every comparison below miss.
+probe_from_app() {
+  local target="$1" out
+  out="$(docker run --rm --network rig_apps curlimages/curl:latest \
+    -s -o /dev/null -w '%{http_code}' --max-time 5 "$target" 2>/dev/null || true)"
+  printf '%s' "${out:-000}"
+}
+[[ "$(probe_from_app http://postgres:5432/)" == "000" ]] \
+  || fail "An app container can reach Postgres."
+pass "An app cannot reach Postgres"
+[[ "$(probe_from_app http://docker-proxy-ro:2375/version)" == "000" ]] \
+  || fail "An app container can reach the Docker proxy."
+pass "An app cannot reach the Docker API"
+
+# And the proxy Traefik uses must refuse anything that changes state.
+probe_proxy() {
+  local out
+  out="$(docker run --rm --network rig_dev_internal curlimages/curl:latest \
+    -s -o /dev/null -w '%{http_code}' --max-time 5 "$@" 2>/dev/null || true)"
+  printf '%s' "${out:-000}"
+}
+[[ "$(probe_proxy http://docker-proxy-ro:2375/version)" == "200" ]] \
+  || fail "Traefik's proxy cannot read the Docker version."
+pass "Traefik's proxy can read"
+[[ "$(probe_proxy -X POST http://docker-proxy-ro:2375/containers/create)" == "403" ]] \
+  || fail "Traefik's proxy allowed a container to be created."
+pass "Traefik's proxy refuses to create a container"
+
 step "Reading logs and stats"
 STATS="$(curl -s -b "$JAR" "$API/api/apps/$APP_ID/stats")"
 grep -q 'memoryBytes' <<<"$STATS" || fail "Stats did not come back: $STATS"
