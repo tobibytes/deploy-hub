@@ -99,7 +99,36 @@ Then open `https://rig.tobipi.dev`, sign in, and **clear `OWNER_PASSWORD` from
 Running `up` again is always safe: migrations, the network and the owner account
 are only applied if they are needed.
 
-## 6. Backups
+## 6. Close the network off
+
+**Do this before anyone else can deploy to it.**
+
+```sh
+sudo ./deploy/harden-network.sh
+sudo ./deploy/harden-network.sh status
+```
+
+Putting the database and the Docker proxies on `internal` networks stops those
+networks reaching the internet. It does **not** stop an app container reaching
+them: the host routes between bridge networks, so an app that knows an address
+can open a connection to it. By hostname it fails, because Docker's DNS does not
+resolve across networks, which makes the gap easy to miss.
+
+The one that matters is the read-write Docker proxy. Reaching it means creating
+a privileged container, which is the whole machine. The rules also stop a hosted
+app scanning the home network the Pi sits on.
+
+The rules live in the `DOCKER-USER` chain, survive `docker compose up`, and do
+**not** survive a reboot. Re-apply them on boot:
+
+```sh
+sudo crontab -e
+# @reboot sleep 30 && /home/pi/rig/deploy/harden-network.sh
+```
+
+`pnpm smoke` probes this by IP and fails if the rules are missing.
+
+## 7. Backups
 
 Nightly, keeping 14 days, onto a drive that is not the SD card:
 
@@ -108,7 +137,8 @@ crontab -e
 # 15 3 * * * RIG_BACKUP_DIR=/mnt/usb/rig-backups /home/pi/rig/deploy/backup.sh >> /home/pi/rig/deploy/backup.log 2>&1
 ```
 
-Run `./deploy/rig.sh backup` once by hand first, and confirm the file appears.
+Run `./deploy/rig.sh backup` once by hand first, and confirm the files appear: a
+database dump, and a tar for each app that keeps data.
 
 ---
 

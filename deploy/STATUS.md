@@ -43,7 +43,7 @@ Legend: **Done** / **Partly** / **Missing**.
 | `socket-ro`, `socket-rw`, `db` all internal | **Done** | Three separate internal networks. Rig is on `web`, `socket-rw` and `db`; Traefik on `edge`, `web`, `apps` and `socket-ro` |
 | Traefik trusts cloudflared's forwarded headers | **Done** | `--entrypoints.web.forwardedHeaders.trustedIPs=172.16.0.0/12` |
 | Traefik access log | **Done** | `--accesslog=true` |
-| App containers cannot reach Postgres or the proxy | **Done** | Apps are on `rig_apps`, which only Traefik shares. Proved in `scripts/smoke.sh`: both probes answer 000 from inside an app |
+| App containers cannot reach Postgres or the proxy | **Done, but needs the firewall** | Only true once `deploy/harden-network.sh` is applied. `internal:` networks stop a network reaching the internet; they do **not** stop an app reaching those subnets by IP, because the host routes between bridge networks. Probing by hostname passes for the wrong reason, which is how this was missed |
 
 ## 5. Creating an app
 
@@ -126,7 +126,7 @@ no outside-in check.
 | A custom domain routes | **Missing** |
 | A failed redeploy keeps the old container serving | **Missing** |
 | An image with no arm64 build gives the clear error | **Partly** — the message is unit-tested, the path is not |
-| An app container cannot reach Postgres or the proxy | **Done** |
+| An app container cannot reach Postgres or the proxy | **Done** — probed by IP, and the run fails if the firewall is missing |
 | Every protected route returns 401 | **Done** — 19 routes |
 
 ## 12. Go-live checklist

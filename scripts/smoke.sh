@@ -31,6 +31,8 @@ APP_ID=""
 # Set once Docker has answered. Until then the cleanup trap must not call it,
 # or a half-dead daemon turns a clean failure into a hang.
 DOCKER_OK=0
+# Set to 0 by the isolation probes when the firewall rules are not applied.
+HARDENED=1
 
 pass() { printf '  ok   %s\n' "$1"; }
 fail() { printf '  FAIL %s\n' "$1" >&2; exit 1; }
@@ -280,5 +282,18 @@ for _ in $(seq 1 20); do
 done
 [[ "$GONE" != "200" ]] || fail "$APP_NAME.$DOMAIN still answers 200 after deletion."
 pass "$APP_NAME.$DOMAIN now answers $GONE"
+
+if (( HARDENED == 0 )); then
+  step "All checks passed, but the network is not hardened"
+  cat >&2 <<'MSG'
+  App containers can reach the database and the Docker API by IP. `internal`
+  networks do not prevent this: the host routes between bridge networks. Apply
+  the rules on the machine Rig runs on:
+
+      sudo ./deploy/harden-network.sh
+
+MSG
+  exit 1
+fi
 
 step "All checks passed"
