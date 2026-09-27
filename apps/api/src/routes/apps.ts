@@ -49,7 +49,7 @@ export const appRoutes =
         return reply.code(400).send({ error: issue?.message ?? 'Check the form.', field: issue?.path.join('.') });
       }
       const me = request.user!;
-      const app = await apps.create(me.id, parsed.data);
+      const app = await apps.create(me.id, parsed.data, me.role === 'owner');
       return reply.code(201).send(app);
     });
 
@@ -80,7 +80,9 @@ export const appRoutes =
           const issue = parsed.error.issues[0];
           return reply.code(400).send({ error: issue?.message ?? 'Check the form.', field: issue?.path.join('.') });
         }
-        return reply.send(await apps.update(id, request.user!.id, parsed.data));
+        return reply.send(
+          await apps.update(id, request.user!.id, parsed.data, request.user!.role === 'owner'),
+        );
       });
 
       /**

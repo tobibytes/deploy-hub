@@ -46,6 +46,8 @@ function stubEngine(): DockerEngine {
     stop: async () => {},
     restart: async () => {},
     removeContainer: async () => {},
+    ensureVolume: async () => {},
+    removeVolume: async () => {},
     findContainer: async () => undefined,
     listManaged: async () => [],
     statusOf: async () => ({ status: 'running' as const, containerId: 'stub-container', detail: null }),
@@ -278,7 +280,7 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
   });
 
   it('refuses a name that is not a valid hostname', async () => {
-    for (const name of ['Hello', 'has space', '-lead', 'trail-', 'ab']) {
+    for (const name of ['Hello', 'has space', '-lead', 'trail-', 'a', '2fa']) {
       const response = await fastify.inject({
         method: 'POST',
         url: '/api/apps',
@@ -384,6 +386,87 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
     const body = response.json() as { enabled: boolean; reason?: string };
     expect(body.enabled).toBe(false);
     expect(body.reason).toMatch(/not configured/i);
+  });
+
+  /* ------------------------------------------------------- stored data */
+
+  it('does not hand one person\'s kept data to the next person using the name', async () => {
+    // The member makes an app that keeps data, then deletes it. Deleting keeps
+    // the volume, so the name still has their files behind it.
+    const made = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: otherCookie },
+      payload: { name: 'diary', image: 'nginxdemos/hello', internalPort: 80, volumePath: '/data' },
+    });
+    expect(made.statusCode, made.body).toBe(201);
+    expect((made.json() as { volumeName: string }).volumeName).toBe('rig-diary-data');
+
+    const id = (made.json() as { id: string }).id;
+    const gone = await fastify.inject({ method: 'DELETE', url: `/api/apps/${id}`, headers: { cookie: otherCookie } });
+    expect(gone.statusCode).toBe(204);
+
+    // A different person now takes the freed name. They must not inherit it.
+    const stranger = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: ownerCookie },
+      payload: { name: 'diary', image: 'nginxdemos/hello', internalPort: 80, volumePath: '/data' },
+    });
+    expect(stranger.statusCode, stranger.body).toBe(400);
+    expect((stranger.json() as { error: string }).error).toMatch(/belongs to someone else/i);
+
+    // The person who owns it gets it back, which is the recovery path.
+    const back = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: otherCookie },
+      payload: { name: 'diary', image: 'nginxdemos/hello', internalPort: 80, volumePath: '/data' },
+    });
+    expect(back.statusCode, back.body).toBe(201);
+  });
+
+  it('lets the name go once the data is deleted with it', async () => {
+    const mine = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: otherCookie },
+      payload: { name: 'scratch', image: 'nginxdemos/hello', internalPort: 80, volumePath: '/data' },
+    });
+    const id = (mine.json() as { id: string }).id;
+    await fastify.inject({
+      method: 'DELETE',
+      url: `/api/apps/${id}?deleteData=true`,
+      headers: { cookie: otherCookie },
+    });
+
+    const someoneElse = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: ownerCookie },
+      payload: { name: 'scratch', image: 'nginxdemos/hello', internalPort: 80, volumePath: '/data' },
+    });
+    expect(someoneElse.statusCode, someoneElse.body).toBe(201);
+  });
+
+  it('does not claim a name for an app that keeps nothing', async () => {
+    const made = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: otherCookie },
+      payload: { name: 'ephemeral', image: 'nginxdemos/hello', internalPort: 80 },
+    });
+    expect((made.json() as { volumePath: string | null }).volumePath).toBeNull();
+    const id = (made.json() as { id: string }).id;
+    await fastify.inject({ method: 'DELETE', url: `/api/apps/${id}`, headers: { cookie: otherCookie } });
+
+    const reused = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: ownerCookie },
+      payload: { name: 'ephemeral', image: 'nginxdemos/hello', internalPort: 80 },
+    });
+    expect(reused.statusCode, reused.body).toBe(201);
   });
 
   it('answers not found for an id that is not a uuid, rather than a server error', async () => {

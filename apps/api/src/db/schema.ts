@@ -64,6 +64,25 @@ export const apps = pgTable('apps', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('apps_owner_id_idx').on(t.ownerId)]);
 
+/**
+ * Who a data volume belongs to.
+ *
+ * The volume outlives the app, because deleting an app keeps its data unless
+ * asked otherwise. Without this, the next person to use that app name would
+ * mount whatever the last one left behind, and app names are public. The claim
+ * is kept here rather than as a Docker label because labels cannot be changed
+ * after a volume is made.
+ */
+export const volumeClaims = pgTable('volume_claims', {
+  /** The volume itself, rig-<app>-data. */
+  name: text('name').primaryKey(),
+  /** Null once the account is gone. Only the server owner may take those over. */
+  ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  /** The app that last used it, for the message when a name is refused. */
+  appName: text('app_name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const events = pgTable('events', {
   id: uuid('id').primaryKey().defaultRandom(),
   appId: uuid('app_id').references(() => apps.id, { onDelete: 'cascade' }),

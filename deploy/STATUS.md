@@ -56,7 +56,7 @@ Legend: **Done** / **Partly** / **Missing**.
 | Container name, network, no host ports, labels, restart, limits | **Done** | Covered by 13 tests in `labels.test.ts` |
 | `CapDrop: ["ALL"]` | **Done, with a deliberate deviation** | Rig drops all and **adds back eight** (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `KILL`, `NET_BIND_SERVICE`, `SETGID`, `SETUID`). See the note at the end |
 | `no-new-privileges:true` | **Done** | The explicit form, pinned by a test |
-| Named data volume | **Done** | Optional `volumePath`; Rig makes `rig-<name>-data` and mounts it there. Never a bind mount |
+| Named data volume | **Done** | Optional `volumePath`; Rig makes `rig-<name>-data` and mounts it there. Never a bind mount. A volume is claimed by the account that made it, so a freed app name does not hand its data to the next person |
 | Env decrypted late, never logged | **Done** | AES-256-GCM, decrypted in `deployInBackground` |
 | Wait until running | **Done** | `waitUntilRunning`, 15 seconds |
 | **HTTP GET the app over `rig_apps`, up to 60s** | **Missing** | Rig marks an app running as soon as the container runs, so an app that starts and then fails to serve still shows green |

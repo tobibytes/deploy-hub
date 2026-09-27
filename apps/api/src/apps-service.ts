@@ -161,6 +161,50 @@ export class AppsService {
       .where(eq(schema.apps.id, id));
   }
 
+  /**
+   * Makes sure the data behind this app name is this person's to use.
+   *
+   * Deleting an app keeps its volume by default, so a volume can outlive the
+   * app that made it. App names are public, so without this the next person to
+   * use the name would mount whatever the last one left. The server owner may
+   * take over a volume nobody holds, which is how volumes made before claims
+   * existed stay usable.
+   */
+  private async claimVolume(
+    name: string,
+    appName: string,
+    userId: string,
+    isServerOwner: boolean,
+  ): Promise<void> {
+    const rows = await this.db
+      .select()
+      .from(schema.volumeClaims)
+      .where(eq(schema.volumeClaims.name, name))
+      .limit(1);
+    const claim = rows[0];
+
+    if (!claim) {
+      await this.db.insert(schema.volumeClaims).values({ name, ownerId: userId, appName });
+      return;
+    }
+    if (claim.ownerId === userId) return;
+    if (claim.ownerId === null && isServerOwner) {
+      await this.db
+        .update(schema.volumeClaims)
+        .set({ ownerId: userId, appName })
+        .where(eq(schema.volumeClaims.name, name));
+      return;
+    }
+    throw new InputError(
+      `The name "${appName}" still holds data that belongs to someone else. Pick another name.`,
+      'name',
+    );
+  }
+
+  private async releaseVolume(name: string): Promise<void> {
+    await this.db.delete(schema.volumeClaims).where(eq(schema.volumeClaims.name, name));
+  }
+
   /** Names are unique across the install because each one is a public hostname. */
   private async assertNameFree(name: string): Promise<void> {
     const verdict = checkAppName(name, [...this.cfg.extraReservedNames]);
@@ -173,8 +217,13 @@ export class AppsService {
     if (taken.length > 0) throw new InputError(`"${name}" is already taken. Pick another name.`, 'name');
   }
 
-  async create(userId: string, input: CreateAppInput): Promise<App> {
+  async create(userId: string, input: CreateAppInput, isServerOwner = false): Promise<App> {
     await this.assertNameFree(input.name);
+    // Before the row exists, so a refusal is a clean 400 rather than a deploy
+    // that fails in the background.
+    if (input.volumePath) {
+      await this.claimVolume(volumeName(input.name), input.name, userId, isServerOwner);
+    }
 
     const inserted = await this.db
       .insert(schema.apps)
@@ -200,8 +249,11 @@ export class AppsService {
     return this.toApp(row);
   }
 
-  async update(id: string, userId: string, input: UpdateAppInput): Promise<App> {
+  async update(id: string, userId: string, input: UpdateAppInput, isServerOwner = false): Promise<App> {
     const row = await this.row(id);
+    if (input.volumePath && input.volumePath !== row.volumePath) {
+      await this.claimVolume(volumeName(row.name), row.name, userId, isServerOwner);
+    }
     const patch: Partial<AppRow> = { updatedAt: new Date() };
     const notes: string[] = [];
 
@@ -312,6 +364,7 @@ export class AppsService {
     if (row.volumePath) {
       if (deleteData) {
         await this.engine.removeVolume(volumeName(row.name));
+        await this.releaseVolume(volumeName(row.name));
         dataNote = ', and its stored data was deleted';
       } else {
         dataNote = `, and its stored data was kept in ${volumeName(row.name)}`;
