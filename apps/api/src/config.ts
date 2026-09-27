@@ -72,6 +72,12 @@ const schema = z.object({
   TRAEFIK_ENTRYPOINT: z.string().default('web'),
   /** Traefik's own service name, used by the health check. */
   TRAEFIK_PING_URL: z.string().default(''),
+  /**
+   * Traefik's Prometheus endpoint. Rig reads per-app request counts from it, so
+   * traffic figures need nothing added to the apps. Empty turns the feature off
+   * and the dashboard says so rather than showing zeroes.
+   */
+  TRAEFIK_METRICS_URL: z.string().default(''),
 
   /** Where the built dashboard lives. Empty means do not serve static files. */
   WEB_DIST: z.string().default(''),

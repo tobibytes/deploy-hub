@@ -30,6 +30,7 @@ async function main(): Promise<void> {
     fastify.log.warn({ error: String(error) }, 'first reconcile failed, will try again');
   });
   services.reconciler.start();
+  services.traffic.start();
 }
 
 main().catch((error: unknown) => {

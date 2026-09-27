@@ -139,6 +139,7 @@ services:
       APPS_NETWORK: rig_apps
       TRAEFIK_ENTRYPOINT: web
       TRAEFIK_PING_URL: http://traefik:8080/ping
+      TRAEFIK_METRICS_URL: http://traefik:8080/metrics
       LOG_LEVEL: ${LOG_LEVEL:-info}
     labels:
       traefik.enable: "true"

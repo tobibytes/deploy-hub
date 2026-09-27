@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type { App, AppDetail } from '@rig/shared/client';
-import { api, type ActivityEntry, type ServerInfo } from './api.js';
+import { api, type ActivityEntry, type AppTraffic, type ServerInfo } from './api.js';
 
 export const keys = {
   me: ['me'] as const,
@@ -9,6 +9,7 @@ export const keys = {
   app: (id: string) => ['apps', id] as const,
   progress: (id: string) => ['apps', id, 'progress'] as const,
   stats: (id: string) => ['apps', id, 'stats'] as const,
+  traffic: (id: string) => ['apps', id, 'traffic'] as const,
   activity: ['activity'] as const,
   health: ['health'] as const,
 };
@@ -60,6 +61,16 @@ export function useStats(id: string, enabled: boolean) {
     refetchInterval: enabled ? 3000 : false,
     enabled,
     retry: false,
+  });
+}
+
+/** Traefik is sampled every 30 seconds, so refreshing faster shows nothing new. */
+export function useTraffic(id: string, enabled: boolean) {
+  return useQuery<AppTraffic>({
+    queryKey: keys.traffic(id),
+    queryFn: () => api.traffic(id),
+    refetchInterval: enabled ? 15_000 : false,
+    enabled,
   });
 }
 

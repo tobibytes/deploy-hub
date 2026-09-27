@@ -6,6 +6,7 @@ import { DockerEngine } from './docker/engine.js';
 import { AppsService } from './apps-service.js';
 import { Reconciler } from './reconciler.js';
 import { ensureOwner, pruneExpiredSessions } from './auth.js';
+import { TrafficCollector } from './metrics/traffic.js';
 import { withTimeout } from './timeout.js';
 
 export interface Logger {
@@ -21,6 +22,7 @@ export interface RigServices {
   engine: DockerEngine;
   apps: AppsService;
   reconciler: Reconciler;
+  traffic: TrafficCollector;
   close(): Promise<void>;
 }
 
@@ -51,6 +53,8 @@ export async function createServices(config: Config, log: Logger): Promise<RigSe
 
   const apps = new AppsService(db, engine, config, log);
   const reconciler = new Reconciler(db, engine, apps, config, log);
+  const traffic = new TrafficCollector(config.TRAEFIK_METRICS_URL, log);
+  apps.onRemoved = (name) => traffic.forget(name);
 
   const owner = await ensureOwner(db, config);
   log.info({ owner: config.OWNER_EMAIL, result: owner }, 'owner account');
@@ -69,8 +73,10 @@ export async function createServices(config: Config, log: Logger): Promise<RigSe
     engine,
     apps,
     reconciler,
+    traffic,
     async close() {
       reconciler.stop();
+      traffic.stop();
       await pool.end();
     },
   };

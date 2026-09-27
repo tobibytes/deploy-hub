@@ -20,6 +20,7 @@ import { Reconciler } from './reconciler.js';
 import { buildServer } from './server.js';
 import type { RigServices } from './services.js';
 import type { DockerEngine } from './docker/engine.js';
+import { TrafficCollector } from './metrics/traffic.js';
 import { hashPassword } from './crypto.js';
 import { SESSION_COOKIE } from './auth.js';
 
@@ -114,6 +115,8 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
       engine,
       apps,
       reconciler: new Reconciler(db, engine, apps, config, quiet),
+      // No metrics URL, so the collector is off and the route says so.
+      traffic: new TrafficCollector('', quiet),
       close: async () => {
         await created.pool.end();
       },
@@ -214,6 +217,7 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
     ['POST', '/api/apps/11111111-1111-1111-1111-111111111111/redeploy'],
     ['GET', '/api/apps/11111111-1111-1111-1111-111111111111/logs'],
     ['GET', '/api/apps/11111111-1111-1111-1111-111111111111/stats'],
+    ['GET', '/api/apps/11111111-1111-1111-1111-111111111111/traffic'],
     ['GET', '/api/apps/11111111-1111-1111-1111-111111111111/progress'],
     ['POST', '/api/auth/password'],
     ['POST', '/api/auth/logout-everywhere'],
@@ -349,6 +353,25 @@ describe.skipIf(!DATABASE_URL)('the api', () => {
     const mine = await fastify.inject({ method: 'GET', url: '/api/apps', headers: { cookie: otherCookie } });
     const names = (mine.json() as { name: string }[]).map((a) => a.name);
     expect(names).toEqual(['members-app']);
+  });
+
+  it('says traffic is off rather than showing zeroes when Traefik has no metrics', async () => {
+    const created = await fastify.inject({
+      method: 'POST',
+      url: '/api/apps',
+      headers: { cookie: ownerCookie },
+      payload: { name: 'traffic-app', image: 'nginxdemos/hello', internalPort: 80 },
+    });
+    const id = (created.json() as { id: string }).id;
+    const response = await fastify.inject({
+      method: 'GET',
+      url: `/api/apps/${id}/traffic`,
+      headers: { cookie: ownerCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { enabled: boolean; reason?: string };
+    expect(body.enabled).toBe(false);
+    expect(body.reason).toMatch(/not configured/i);
   });
 
   it('answers not found for an id that is not a uuid, rather than a server error', async () => {

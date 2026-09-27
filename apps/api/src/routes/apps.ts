@@ -106,6 +106,19 @@ export const appRoutes =
         return reply.send(apps.progress(id) ?? { appId: id, steps: [], finishedAt: null, error: null });
       });
 
+      /** Per-app traffic, read from Traefik rather than from the app. */
+      scope.get('/apps/:id/traffic', async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const row = await apps.row(id);
+        if (!services.traffic.enabled) {
+          return reply.send({
+            enabled: false,
+            reason: 'Traefik metrics are not configured, so there are no traffic figures yet.',
+          });
+        }
+        return reply.send({ enabled: true, ...services.traffic.forApp(row.name) });
+      });
+
       scope.get('/apps/:id/stats', async (request, reply) => {
         const { id } = request.params as IdParams;
         const row = await apps.row(id);

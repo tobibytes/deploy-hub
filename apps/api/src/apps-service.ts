@@ -36,6 +36,9 @@ export class NotFoundError extends Error {
 export class AppsService {
   private readonly key: Buffer;
 
+  /** Set by the server so deleting an app also drops its traffic history. */
+  onRemoved?: (appName: string) => void;
+
   constructor(
     private readonly db: Db,
     private readonly engine: DockerEngine,
@@ -288,6 +291,7 @@ export class AppsService {
     await this.engine.removeContainer(row.name, row.id);
     await this.db.delete(schema.apps).where(eq(schema.apps.id, id));
     this.engine.progress.forget(id);
+    this.onRemoved?.(row.name);
     // The app row is gone, so this event keeps only the name for the feed.
     await this.record(null, row.name, userId, 'delete', 'ok', `${row.name}.${this.cfg.BASE_DOMAIN} no longer resolves`);
   }

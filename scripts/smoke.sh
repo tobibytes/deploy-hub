@@ -89,6 +89,7 @@ env \
   DOCKER_SOCKET_PATH="${DOCKER_SOCKET_PATH:-/var/run/docker.sock}" \
   APPS_NETWORK=rig_apps \
   TRAEFIK_PING_URL="http://127.0.0.1:${TRAEFIK_API_PORT:-8081}/ping" \
+  TRAEFIK_METRICS_URL="http://127.0.0.1:${TRAEFIK_API_PORT:-8081}/metrics" \
   LOG_LEVEL=warn \
   WEB_DIST=/nowhere \
   pnpm --filter @rig/api exec tsx src/index.ts >"$API_LOG" 2>&1 &

@@ -70,6 +70,20 @@ export interface DeployProgressView {
 
 export type ActivityEntry = AppEvent & { appName: string | null; appId: string | null };
 
+export interface AppTraffic {
+  enabled: boolean;
+  /** Present when enabled is false. */
+  reason?: string;
+  totalRequests: number;
+  totalBytes: number;
+  byStatus: { code: string; requests: number }[];
+  p50Ms: number | null;
+  p95Ms: number | null;
+  series: { at: string; requests: number; bytes: number }[];
+  seen: boolean;
+  sampledAt: string | null;
+}
+
 export const api = {
   /* auth */
   me: () => request<Me>('/auth/me'),
@@ -102,6 +116,7 @@ export const api = {
   redeploy: (id: string) => request<App>(`/apps/${id}/redeploy`, { method: 'POST' }),
   progress: (id: string) => request<DeployProgressView>(`/apps/${id}/progress`),
   stats: (id: string) => request<AppStats>(`/apps/${id}/stats`),
+  traffic: (id: string) => request<AppTraffic>(`/apps/${id}/traffic`),
   activity: () => request<ActivityEntry[]>('/activity'),
 };
 

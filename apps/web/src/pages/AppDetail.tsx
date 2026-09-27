@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { AppDetail } from '@rig/shared/client';
 import { CPU_CORES, MEMORY_MB } from '@rig/shared/client';
 import { ApiError, streamLogs } from '../lib/api.js';
-import { useApp, useAppAction, useDeployProgress, useStats } from '../lib/queries.js';
+import { useApp, useAppAction, useDeployProgress, useStats, useTraffic } from '../lib/queries.js';
 import { PageHead } from '../layout/Shell.js';
 import {
   Actions,
@@ -16,6 +16,7 @@ import {
   Input,
   Select,
   Sparkline,
+  StatTiles,
   StatusPill,
   TabPanel,
   Tabs,
@@ -42,6 +43,7 @@ import s from './pages.module.css';
 
 const TABS = [
   { value: 'overview', label: 'Overview' },
+  { value: 'traffic', label: 'Traffic' },
   { value: 'logs', label: 'Logs' },
   { value: 'environment', label: 'Environment' },
   { value: 'activity', label: 'Activity' },
@@ -140,6 +142,7 @@ export function AppDetailPage() {
         <TabPanel value="overview">
           <Overview app={app} />
         </TabPanel>
+        <TabPanel value="traffic">{tab === 'traffic' ? <Traffic app={app} /> : null}</TabPanel>
         <TabPanel value="logs">{tab === 'logs' ? <Logs app={app} /> : null}</TabPanel>
         <TabPanel value="environment">
           <Environment app={app} />
@@ -237,6 +240,118 @@ function Overview({ app }: { app: AppDetail }) {
         </p>
       ) : null}
     </div>
+  );
+}
+
+/* ----------------------------------------------------------------- Traffic */
+
+/** Colour follows what the status class means, and nothing else does. */
+function statusColour(code: string): string {
+  if (code.startsWith('2')) return 'var(--ok)';
+  if (code.startsWith('3')) return 'var(--accent)';
+  if (code.startsWith('4')) return 'var(--warn)';
+  if (code.startsWith('5')) return 'var(--stop)';
+  return 'var(--idle)';
+}
+
+function Traffic({ app }: { app: AppDetail }) {
+  const traffic = useTraffic(app.id, true);
+  const data = traffic.data;
+
+  if (traffic.isPending) {
+    return (
+      <Card title="Traffic">
+        <p className={s.envEmpty}>Reading the figures.</p>
+      </Card>
+    );
+  }
+
+  if (!data?.enabled) {
+    return (
+      <Card title="Traffic" subtitle="Counted by Traefik, so nothing is added to your app.">
+        <p className={s.envEmpty}>{data?.reason ?? 'Traffic figures are not available.'}</p>
+      </Card>
+    );
+  }
+
+  if (!data.seen) {
+    return (
+      <Card title="Traffic" subtitle="Counted by Traefik, so nothing is added to your app.">
+        <p className={s.envEmpty}>
+          No requests yet. Anything that reaches {app.hostname} will show up here within half a minute.
+        </p>
+      </Card>
+    );
+  }
+
+  const busiest = Math.max(1, ...data.byStatus.map((row) => row.requests));
+  const series = data.series.map((point) => point.requests);
+
+  return (
+    <>
+      <Card title="Traffic" subtitle={`Since Traefik last started${data.sampledAt ? `, read ${when(data.sampledAt)}` : ''}.`}>
+        <div className={s.trafficTiles}>
+          <StatTiles
+            tiles={[
+              { label: 'Requests', value: data.totalRequests },
+              {
+                // Only 5xx counts here. A 404 is the app answering, not the
+                // server falling over, and calling both "failed" reads wrong.
+                label: 'Server errors',
+                value: data.byStatus
+                  .filter((r) => r.code.startsWith('5'))
+                  .reduce((n, r) => n + r.requests, 0),
+                loud: true,
+              },
+            ]}
+          />
+        </div>
+
+        <Facts
+          items={[
+            { label: 'Served', value: bytes(data.totalBytes) },
+            { label: 'Median response', value: data.p50Ms === null ? 'No reading yet' : `${data.p50Ms} ms` },
+            { label: 'Slowest 5 in 100', value: data.p95Ms === null ? 'No reading yet' : `${data.p95Ms} ms` },
+            { label: 'Address', value: app.hostname, mono: true },
+          ]}
+        />
+      </Card>
+
+      {series.length > 1 ? (
+        <Card title="Requests over time" subtitle="One point every thirty seconds, for the last two hours.">
+          <Sparkline
+            label="Requests per sample"
+            value={String(series.at(-1) ?? 0)}
+            points={series}
+          />
+        </Card>
+      ) : (
+        <Card title="Requests over time">
+          <p className={s.envEmpty}>
+            The shape appears once there are two readings, so give it about a minute.
+          </p>
+        </Card>
+      )}
+
+      <Card title="By status" subtitle="What your app actually answered.">
+        <ul className={s.statusRows}>
+          {data.byStatus.map((row) => (
+            <li className={s.statusRow} key={row.code} style={{ ['--c' as string]: statusColour(row.code) }}>
+              <span className={s.statusCode}>{row.code}</span>
+              <span className={s.statusBar} style={{ width: `${Math.round((row.requests / busiest) * 100)}%` }} />
+              <span className={s.statusCount}>{row.requests}</span>
+            </li>
+          ))}
+        </ul>
+        {data.totalRequests > 0 &&
+        !data.byStatus.some((row) => row.code.startsWith('2') || row.code.startsWith('3')) ? (
+          <p className={s.trafficNote} style={{ marginTop: 12 }}>
+            Nothing has been answered successfully yet. That answer is coming from your app rather
+            than from Rig, so check the path it serves and the port you gave it.
+          </p>
+        ) : null}
+      </Card>
+    </>
   );
 }
 

@@ -37,6 +37,18 @@ first_free_port() {
 VITE_PORT="${VITE_PORT:-$(first_free_port 5173)}"
 export VITE_PORT
 
+# Settings that must follow the machine rather than being frozen when the file
+# was first written. Anything added to Rig later needs a line here too, or an
+# existing deploy/.env silently misses it.
+set_env_var() {
+  local key="$1" value="$2"
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    sed -i '' "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
 write_env() {
   local database_url="$1"
   [[ -f "$ENV_FILE" ]] && return 0
@@ -71,6 +83,7 @@ COOKIE_SECURE=false
 DOCKER_HOST_URL=
 APPS_NETWORK=rig_apps
 TRAEFIK_PING_URL=http://127.0.0.1:${TRAEFIK_API_PORT:-8081}/ping
+TRAEFIK_METRICS_URL=http://127.0.0.1:${TRAEFIK_API_PORT:-8081}/metrics
 LOG_LEVEL=info
 EOF
   echo "Sign in with ${OWNER_EMAIL:-dev@localhost} / ${OWNER_PASSWORD:-devpassword123}"
@@ -133,11 +146,11 @@ else
   # engine answers can change between runs.
   socket="$(docker_socket_path)"
   if [[ -n "$socket" ]]; then
-    grep -q '^DOCKER_SOCKET_PATH=' "$ENV_FILE" \
-      && sed -i '' "s|^DOCKER_SOCKET_PATH=.*|DOCKER_SOCKET_PATH=$socket|" "$ENV_FILE" \
-      || printf 'DOCKER_SOCKET_PATH=%s\n' "$socket" >> "$ENV_FILE"
+    set_env_var DOCKER_SOCKET_PATH "$socket"
     echo "Rig will use the Docker socket at $socket"
   fi
+  set_env_var TRAEFIK_PING_URL "http://127.0.0.1:${TRAEFIK_API_PORT:-8081}/ping"
+  set_env_var TRAEFIK_METRICS_URL "http://127.0.0.1:${TRAEFIK_API_PORT:-8081}/metrics"
 fi
 
 echo
