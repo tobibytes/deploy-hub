@@ -30,6 +30,12 @@ services:
       - --api.dashboard=false
       - --api.insecure=false
       - --ping=true
+      # Per-router request counts, status codes, sizes and latency, on the
+      # traefik entrypoint so they are never routed from outside. Rig scrapes
+      # these to show per-app traffic without putting anything in the apps.
+      - --metrics.prometheus=true
+      - --metrics.prometheus.addRoutersLabels=true
+      - --metrics.prometheus.entryPoint=traefik
       - --entrypoints.web.address=:80
       # Not published to the host in production, and never routed by
       # cloudflared, so /ping is reachable from Rig and nowhere else.
