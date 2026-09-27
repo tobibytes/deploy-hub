@@ -83,9 +83,14 @@ export const appRoutes =
         return reply.send(await apps.update(id, request.user!.id, parsed.data));
       });
 
+      /**
+       * Deleting always removes the container. Stored data is kept unless
+       * ?deleteData=true is passed, because that part cannot be undone.
+       */
       scope.delete('/apps/:id', async (request, reply) => {
         const { id } = request.params as IdParams;
-        await apps.remove(id, request.user!.id);
+        const { deleteData } = request.query as { deleteData?: string };
+        await apps.remove(id, request.user!.id, deleteData === 'true');
         return reply.code(204).send();
       });
 

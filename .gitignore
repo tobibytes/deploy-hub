@@ -4,9 +4,11 @@ dist
 .DS_Store
 *.local
 
-# secrets
+# secrets. The glob matters: deploy/.env.pi and any other variant hold real
+# credentials, and matching only the exact name would let them be committed.
 .env
-deploy/.env
+.env.*
+deploy/.env*
 !deploy/.env.example
 
 # editors

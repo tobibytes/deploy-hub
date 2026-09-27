@@ -55,6 +55,20 @@ const schema = z.object({
     .string()
     .refine(isThirtyTwoBytes, 'ENV_ENCRYPTION_KEY must be exactly 32 bytes. Generate one with: openssl rand -base64 32'),
 
+  /**
+   * Whether strangers may create their own account. Off unless asked for: an
+   * account here is the right to run containers on this machine.
+   */
+  SIGNUP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /** How many apps one member may have at a time. The owner is not limited. */
+  MEMBER_APP_QUOTA: z.coerce.number().int().min(0).max(100).default(3),
+  /** The most a member may give a single app. The owner may go to the maximum. */
+  MEMBER_MAX_MEMORY_MB: z.coerce.number().int().min(64).max(1024).default(256),
+  MEMBER_MAX_CPU: z.coerce.number().min(0.1).max(2).default(0.5),
+
   /** Owner account. Created on first boot when OWNER_PASSWORD is also set. */
   OWNER_EMAIL: z.string().includes('@', { message: 'OWNER_EMAIL must be an email address.' }),
   OWNER_PASSWORD: z.string().min(10).optional(),

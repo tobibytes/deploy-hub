@@ -1,0 +1,1 @@
+ALTER TABLE "apps" ADD COLUMN "volume_path" text;

@@ -415,3 +415,33 @@ details[open] > .disclosureSummary::before {
   font-size: 12.5px;
   color: var(--muted);
 }
+
+/* The one choice in the delete dialog that decides whether data survives. */
+.dataChoice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--soft);
+  cursor: pointer;
+}
+
+.dataChoice input {
+  margin-top: 3px;
+  accent-color: var(--stop);
+  width: 15px;
+  height: 15px;
+}
+
+.dataChoice strong {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+}

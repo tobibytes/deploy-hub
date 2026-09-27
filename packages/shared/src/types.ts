@@ -16,6 +16,8 @@ export interface CreateAppInput {
   env: Record<string, string>;
   memoryMb: number;
   cpuCores: number;
+  /** Where to mount a named volume, or null for an app that keeps nothing. */
+  volumePath: string | null;
 }
 
 export interface UpdateAppInput {
@@ -24,6 +26,23 @@ export interface UpdateAppInput {
   env?: Record<string, string>;
   memoryMb?: number;
   cpuCores?: number;
+  volumePath?: string | null;
+}
+
+export interface SignupInput {
+  email: string;
+  password: string;
+}
+
+/** Readable without signing in, so the login page knows what to offer. */
+export interface PublicConfig {
+  signupEnabled: boolean;
+  domain: string;
+  quota: {
+    apps: number;
+    memoryMb: number;
+    cpuCores: number;
+  };
 }
 
 export interface ChangePasswordInput {
@@ -55,6 +74,10 @@ export interface App {
   hostname: string;
   memoryMb: number;
   cpuCores: number;
+  /** Null when the app keeps nothing between deploys. */
+  volumePath: string | null;
+  /** The named volume holding its data, when it has one. */
+  volumeName: string | null;
   containerId: string | null;
   lastError: string | null;
   createdAt: string;

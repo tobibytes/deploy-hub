@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { CPU_CORES, MEMORY_MB, checkAppName } from '@rig/shared/client';
+import { CPU_CORES, MEMORY_MB, checkAppName, checkMountPath } from '@rig/shared/client';
 import { api, ApiError } from '../lib/api.js';
 import { keys, useDeployProgress, useServerInfo } from '../lib/queries.js';
 import { PageHead } from '../layout/Shell.js';
@@ -35,6 +35,7 @@ export function NewAppPage() {
   const [image, setImage] = useState('');
   const [port, setPort] = useState('80');
   const [env, setEnv] = useState<EnvRow[]>([]);
+  const [volumePath, setVolumePath] = useState('');
   const [memoryMb, setMemoryMb] = useState(String(MEMORY_MB.default));
   const [cpuCores, setCpuCores] = useState(String(CPU_CORES.default));
 
@@ -50,6 +51,9 @@ export function NewAppPage() {
   );
   const nameProblem = !nameCheck.ok ? nameCheck.reason : null;
 
+  const mountCheck = volumePath.trim() ? checkMountPath(volumePath.trim()) : { ok: true as const };
+  const mountProblem = !mountCheck.ok ? mountCheck.reason : null;
+
   const progress = useDeployProgress(deployingId ?? '', Boolean(deployingId));
 
   function setEnvRow(index: number, patch: Partial<EnvRow>) {
@@ -63,6 +67,10 @@ export function NewAppPage() {
 
     if (nameProblem) {
       setFieldError({ field: 'name', message: nameProblem });
+      return;
+    }
+    if (mountProblem) {
+      setFieldError({ field: 'volumePath', message: mountProblem });
       return;
     }
 
@@ -86,6 +94,7 @@ export function NewAppPage() {
         env: envMap,
         memoryMb: Number(memoryMb),
         cpuCores: Number(cpuCores),
+        volumePath: volumePath.trim() || null,
       });
       void client.invalidateQueries({ queryKey: keys.apps });
       setDeployingId(app.id);
@@ -273,6 +282,22 @@ export function NewAppPage() {
             </div>
           </Field>
 
+          <TextField
+            label="Keep data at"
+            value={volumePath}
+            onChange={(e) => setVolumePath(e.target.value)}
+            placeholder="/data"
+            hint={
+              volumePath.trim()
+                ? 'Anything the app writes here survives a redeploy. Everywhere else does not.'
+                : 'Leave empty unless the app writes files it needs to keep.'
+            }
+            error={fieldError?.field === 'volumePath' ? fieldError.message : mountProblem}
+            mono
+            autoCapitalize="none"
+            spellCheck={false}
+          />
+
           <details className={s.disclosure}>
             <summary className={s.disclosureSummary}>Advanced</summary>
             <div className={s.disclosureBody}>
@@ -309,7 +334,7 @@ export function NewAppPage() {
               type="submit"
               kind="primary"
               busy={submitting}
-              disabled={!name || !image || Boolean(nameProblem) || submitting}
+              disabled={!name || !image || Boolean(nameProblem) || Boolean(mountProblem) || submitting}
             >
               Deploy
             </Button>

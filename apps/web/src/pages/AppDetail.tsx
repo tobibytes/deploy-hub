@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { AppDetail } from '@rig/shared/client';
-import { CPU_CORES, MEMORY_MB } from '@rig/shared/client';
+import { CPU_CORES, MEMORY_MB, checkMountPath } from '@rig/shared/client';
 import { ApiError, streamLogs } from '../lib/api.js';
 import { useApp, useAppAction, useDeployProgress, useStats, useTraffic } from '../lib/queries.js';
 import { PageHead } from '../layout/Shell.js';
@@ -210,6 +210,11 @@ function Overview({ app }: { app: AppDetail }) {
           { label: 'Address', value: app.hostname, mono: true },
           { label: 'Memory limit', value: `${app.memoryMb} MB` },
           { label: 'CPU limit', value: cpuLabel(app.cpuCores) },
+          {
+            label: 'Stored data',
+            value: app.volumePath ? app.volumePath : 'None kept',
+            mono: Boolean(app.volumePath),
+          },
           { label: 'Created', value: when(app.createdAt) },
         ]}
       />
@@ -605,16 +610,22 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
   const [port, setPort] = useState(String(app.internalPort));
   const [memoryMb, setMemoryMb] = useState(String(app.memoryMb));
   const [cpuCores, setCpuCores] = useState(String(app.cpuCores));
+  const [volumePath, setVolumePath] = useState(app.volumePath ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState('');
+  const [alsoDeleteData, setAlsoDeleteData] = useState(false);
+
+  const mountCheck = volumePath.trim() ? checkMountPath(volumePath.trim()) : { ok: true as const };
+  const mountProblem = !mountCheck.ok ? mountCheck.reason : null;
 
   const changed =
     image !== app.image ||
     Number(port) !== app.internalPort ||
     Number(memoryMb) !== app.memoryMb ||
-    Number(cpuCores) !== app.cpuCores;
+    Number(cpuCores) !== app.cpuCores ||
+    (volumePath.trim() || null) !== app.volumePath;
 
   async function save() {
     setError(null);
@@ -624,6 +635,7 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
         internalPort: Number(port),
         memoryMb: Number(memoryMb),
         cpuCores: Number(cpuCores),
+        volumePath: volumePath.trim() || null,
       });
       toast.say(`Saved and redeploying ${app.name}`);
     } catch (caught) {
@@ -633,8 +645,12 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
 
   async function remove() {
     try {
-      await actions.remove.mutateAsync();
-      toast.say(`Deleted ${app.name}. ${app.hostname} no longer resolves.`);
+      await actions.remove.mutateAsync(alsoDeleteData);
+      toast.say(
+        alsoDeleteData
+          ? `Deleted ${app.name} and its stored data. ${app.hostname} no longer resolves.`
+          : `Deleted ${app.name}. ${app.hostname} no longer resolves.`,
+      );
       onDeleted();
     } catch (caught) {
       toast.complain(caught instanceof ApiError ? caught.message : `Could not delete ${app.name}.`);
@@ -670,6 +686,27 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
               </Select>
             </Field>
           </div>
+          <Field
+            label="Keep data at"
+            htmlFor="set-volume"
+            error={mountProblem}
+            hint={
+              app.volumePath
+                ? `Kept in ${app.volumeName}. Clearing this unmounts it and keeps the data.`
+                : 'A path the app can write to that survives a redeploy. Leave empty for none.'
+            }
+          >
+            <Input
+              id="set-volume"
+              value={volumePath}
+              onChange={(e) => setVolumePath(e.target.value)}
+              placeholder="/data"
+              mono
+              bad={Boolean(mountProblem)}
+              spellCheck={false}
+            />
+          </Field>
+
           <Field label="CPU" htmlFor="set-cpu" hint={`${CPU_CORES.min} to ${CPU_CORES.max} cores`}>
             <Select id="set-cpu" value={cpuCores} onChange={(e) => setCpuCores(e.target.value)}>
               {[0.1, 0.25, 0.5, 1, 1.5, 2].map((cores) => (
@@ -685,7 +722,7 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
           <div className={s.formFoot}>
             <Button
               kind="primary"
-              disabled={!changed || actions.update.isPending}
+              disabled={!changed || Boolean(mountProblem) || actions.update.isPending}
               busy={actions.update.isPending}
               onClick={() => void save()}
             >
@@ -710,7 +747,10 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
         open={confirming}
         onOpenChange={(open) => {
           setConfirming(open);
-          if (!open) setTyped('');
+          if (!open) {
+            setTyped('');
+            setAlsoDeleteData(false);
+          }
         }}
         title={`Delete ${app.name}`}
         confirmLabel="Delete for good"
@@ -731,6 +771,19 @@ function SettingsTab({ app, onDeleted }: { app: AppDetail; onDeleted: () => void
           autoCapitalize="none"
           spellCheck={false}
         />
+        {app.volumePath ? (
+          <label className={s.dataChoice}>
+            <input
+              type="checkbox"
+              checked={alsoDeleteData}
+              onChange={(e) => setAlsoDeleteData(e.target.checked)}
+            />
+            <span>
+              Also delete the stored data in <strong>{app.volumeName}</strong>. Left unticked, the data
+              stays and a new app of the same name picks it up again.
+            </span>
+          </label>
+        ) : null}
       </ConfirmDialog>
     </>
   );

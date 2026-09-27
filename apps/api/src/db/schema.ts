@@ -53,6 +53,8 @@ export const apps = pgTable('apps', {
   internalPort: integer('internal_port').notNull().default(80),
   /** AES-256-GCM blob holding the environment map. */
   envEncrypted: text('env_encrypted').notNull().default(''),
+  /** Where a named volume is mounted, or null for an app that keeps nothing. */
+  volumePath: text('volume_path'),
   memoryMb: integer('memory_mb').notNull().default(256),
   cpuCores: doublePrecision('cpu_cores').notNull().default(0.5),
   status: appStatus('status').notNull().default('deploying'),

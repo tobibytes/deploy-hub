@@ -1,4 +1,5 @@
 import type Dockerode from 'dockerode';
+import { volumeName } from '@rig/shared';
 
 /** Marks a container as one Rig created, so the reconciler can find its own work. */
 export const MANAGED_LABEL = 'rig.managed';
@@ -65,6 +66,8 @@ export interface ContainerSpecInput extends LabelInput {
   env: Record<string, string>;
   memoryMb: number;
   cpuCores: number;
+  /** Absolute path for the app's named volume, or null for none. */
+  volumePath: string | null;
 }
 
 /**
@@ -74,6 +77,19 @@ export interface ContainerSpecInput extends LabelInput {
  */
 export function containerSpec(input: ContainerSpecInput): Dockerode.ContainerCreateOptions {
   const memoryBytes = Math.round(input.memoryMb * 1024 * 1024);
+  // A named volume, never a bind mount: the container gets somewhere to keep
+  // data that survives a redeploy, without reaching into the host filesystem.
+  const mounts: Dockerode.MountSettings[] = input.volumePath
+    ? [
+        {
+          Type: 'volume',
+          Source: volumeName(input.appName),
+          Target: input.volumePath,
+          ReadOnly: false,
+        } as Dockerode.MountSettings,
+      ]
+    : [];
+
   return {
     name: containerName(input.appName),
     Image: input.image,
@@ -85,7 +101,9 @@ export function containerSpec(input: ContainerSpecInput): Dockerode.ContainerCre
       NetworkMode: input.network,
       PortBindings: {},
       PublishAllPorts: false,
+      // Binds stay empty whatever happens; storage is only ever a named volume.
       Binds: [],
+      Mounts: mounts,
       RestartPolicy: { Name: 'unless-stopped' },
       Memory: memoryBytes,
       // Equal to Memory, which switches swap off for the container.

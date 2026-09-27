@@ -3,6 +3,7 @@ import {
   appUrl,
   appHostname,
   checkAppName,
+  volumeName,
   type App,
   type AppDetail,
   type AppEvent,
@@ -61,6 +62,8 @@ export class AppsService {
       hostname: appHostname(row.name, this.cfg.BASE_DOMAIN),
       memoryMb: row.memoryMb,
       cpuCores: row.cpuCores,
+      volumePath: row.volumePath,
+      volumeName: row.volumePath ? volumeName(row.name) : null,
       containerId: row.containerId,
       lastError: row.lastError,
       createdAt: row.createdAt.toISOString(),
@@ -183,6 +186,7 @@ export class AppsService {
         envEncrypted: encryptJson(input.env, this.key),
         memoryMb: input.memoryMb,
         cpuCores: input.cpuCores,
+        volumePath: input.volumePath,
         status: 'deploying',
       })
       .returning();
@@ -216,6 +220,16 @@ export class AppsService {
     if (input.cpuCores !== undefined && input.cpuCores !== row.cpuCores) {
       patch.cpuCores = input.cpuCores;
       notes.push(`CPU ${row.cpuCores} to ${input.cpuCores}`);
+    }
+    if (input.volumePath !== undefined && input.volumePath !== row.volumePath) {
+      patch.volumePath = input.volumePath;
+      // The volume itself is never dropped here. Moving or removing the mount
+      // leaves the data where it is, so pointing at it again recovers it.
+      notes.push(
+        input.volumePath
+          ? `stored data mounted at ${input.volumePath}`
+          : `stored data no longer mounted, and kept in ${volumeName(row.name)}`,
+      );
     }
     let envChanged = false;
     if (input.env !== undefined) {
@@ -286,14 +300,36 @@ export class AppsService {
     return this.detailStatus(id);
   }
 
-  async remove(id: string, userId: string): Promise<void> {
+  /**
+   * Deleting always removes the container. Stored data is only removed when
+   * asked for, because it is the one step here that cannot be undone.
+   */
+  async remove(id: string, userId: string, deleteData = false): Promise<void> {
     const row = await this.row(id);
     await this.engine.removeContainer(row.name, row.id);
+
+    let dataNote = '';
+    if (row.volumePath) {
+      if (deleteData) {
+        await this.engine.removeVolume(volumeName(row.name));
+        dataNote = ', and its stored data was deleted';
+      } else {
+        dataNote = `, and its stored data was kept in ${volumeName(row.name)}`;
+      }
+    }
+
     await this.db.delete(schema.apps).where(eq(schema.apps.id, id));
     this.engine.progress.forget(id);
     this.onRemoved?.(row.name);
     // The app row is gone, so this event keeps only the name for the feed.
-    await this.record(null, row.name, userId, 'delete', 'ok', `${row.name}.${this.cfg.BASE_DOMAIN} no longer resolves`);
+    await this.record(
+      null,
+      row.name,
+      userId,
+      'delete',
+      'ok',
+      `${row.name}.${this.cfg.BASE_DOMAIN} no longer resolves${dataNote}`,
+    );
   }
 
   private async detailStatus(id: string): Promise<App> {

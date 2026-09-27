@@ -56,13 +56,13 @@ Legend: **Done** / **Partly** / **Missing**.
 | Container name, network, no host ports, labels, restart, limits | **Done** | Covered by 13 tests in `labels.test.ts` |
 | `CapDrop: ["ALL"]` | **Done, with a deliberate deviation** | Rig drops all and **adds back eight** (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `KILL`, `NET_BIND_SERVICE`, `SETGID`, `SETUID`). See the note at the end |
 | `no-new-privileges:true` | **Done** | The explicit form, pinned by a test |
-| Named data volume | **Missing** | No volume support at all. Needed for AI DJ |
+| Named data volume | **Done** | Optional `volumePath`; Rig makes `rig-<name>-data` and mounts it there. Never a bind mount |
 | Env decrypted late, never logged | **Done** | AES-256-GCM, decrypted in `deployInBackground` |
 | Wait until running | **Done** | `waitUntilRunning`, 15 seconds |
 | **HTTP GET the app over `rig_apps`, up to 60s** | **Missing** | Rig marks an app running as soon as the container runs, so an app that starts and then fails to serve still shows green |
 | Failed deploy attaches the last 50 log lines | **Missing** | Only the error message is stored |
 | Zero-downtime redeploy (`-next`, then rename) | **Missing** | Redeploy removes the old container first, so there is a gap, and a failed pull leaves nothing running |
-| Delete offers to keep or remove data | **Missing** | No volumes yet |
+| Delete offers to keep or remove data | **Done** | Data is kept unless `?deleteData=true`. The dialog asks, unticked |
 
 ## 6. Reconciler
 
@@ -110,7 +110,7 @@ no outside-in check.
 | Item | State | Notes |
 |---|---|---|
 | Nightly `pg_dump`, 14 days | **Done** | `deploy/backup.sh`, verifies the gzip before pruning |
-| Tar of every `rig-*-data` volume | **Missing** | No volumes yet |
+| Tar of every `rig-*-data` volume | **Done** | Tarred from a throwaway container, verified, and pruned separately from the dumps |
 | `deploy/restore.md`, tested once | **Missing** | |
 | CI multi-arch image to GHCR | **Done** | `.github/workflows/ci.yml` |
 | `docker compose pull && up -d` | **Done** | `deploy/rig.sh up` |
@@ -148,7 +148,7 @@ From section 13 of the guide. Stop and show after 2, 5 and 7.
    against the real domain)
 4. Health-checked deploys and zero-downtime redeploy
 5. Reconciler plus the Docker events subscription ← **stop and show**
-6. Named data volumes
+6. ~~Named data volumes~~ **done**
 7. Custom domains and the status pill ← **stop and show**
 8. The Cloudflare details in section 9
 9. ~~Backups, then `deploy/README.md`~~ **partly**: the checklist is written, the

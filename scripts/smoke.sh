@@ -222,6 +222,47 @@ done
 [[ "$CODE" == "200" ]] || fail "After a restart Traefik answered $CODE."
 pass "It still answers after a restart"
 
+step "Checking stored data survives a redeploy"
+DATA_NAME="$APP_NAME-data"
+DATA_ID="$(curl -s -b "$JAR" -H 'Content-Type: application/json' \
+  -d "{\"name\":\"$DATA_NAME\",\"image\":\"$IMAGE\",\"internalPort\":80,\"volumePath\":\"/data\"}" \
+  "$API/api/apps" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)"
+[[ -n "$DATA_ID" ]] || fail "Could not create the app with storage."
+for _ in $(seq 1 120); do
+  S="$(curl -s -b "$JAR" "$API/api/apps/$DATA_ID" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  [[ "$S" == "deploying" ]] || break
+  sleep 1
+done
+[[ "$S" == "running" ]] || fail "The app with storage ended up $S."
+pass "Deployed an app with a volume"
+
+run_with_deadline 60 docker run --rm -v "rig-$DATA_NAME-data":/data alpine:latest \
+  sh -c 'echo saved > /data/proof' || fail "Could not write into the volume."
+pass "Wrote a file into its volume"
+
+OLD_ID="$(docker inspect -f '{{.Id}}' "rig-$DATA_NAME" 2>/dev/null)"
+curl -fsS -b "$JAR" -X POST "$API/api/apps/$DATA_ID/redeploy" >/dev/null || fail "Redeploy failed."
+for _ in $(seq 1 120); do
+  S="$(curl -s -b "$JAR" "$API/api/apps/$DATA_ID" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  [[ "$S" == "deploying" ]] || break
+  sleep 1
+done
+NEW_ID="$(docker inspect -f '{{.Id}}' "rig-$DATA_NAME" 2>/dev/null)"
+[[ -n "$NEW_ID" && "$OLD_ID" != "$NEW_ID" ]] || fail "The container was not actually replaced."
+pass "The container was replaced"
+[[ "$(docker run --rm -v "rig-$DATA_NAME-data":/data alpine:latest cat /data/proof 2>/dev/null)" == "saved" ]] \
+  || fail "The stored data did not survive the redeploy."
+pass "The stored data survived"
+
+# Deleting keeps data unless asked, which is the behaviour worth guarding.
+curl -s -b "$JAR" -X DELETE "$API/api/apps/$DATA_ID" >/dev/null
+docker volume inspect "rig-$DATA_NAME-data" >/dev/null 2>&1 \
+  || fail "Deleting an app removed its data without being asked."
+pass "Deleting kept the data"
+curl -s -b "$JAR" -X DELETE "$API/api/apps/$DATA_ID?deleteData=true" >/dev/null 2>&1 || true
+run_with_deadline 30 docker volume rm -f "rig-$DATA_NAME-data" || true
+pass "Cleaned the volume up"
+
 step "Deleting, and checking the address stops working"
 DELETE_CODE="$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X DELETE "$API/api/apps/$APP_ID")"
 [[ "$DELETE_CODE" == "204" ]] || fail "Deleting answered $DELETE_CODE."

@@ -3,6 +3,7 @@ import type { AppRow } from '../db/schema.js';
 import type { Config } from '../config.js';
 import { ensureNetwork, hostPlatform, pullImage, type Docker } from './client.js';
 import { APP_ID_LABEL, MANAGED_LABEL, containerName, containerSpec } from './labels.js';
+import { volumeName } from '@rig/shared';
 import { DeployProgress } from './progress.js';
 import { withTimeout } from '../timeout.js';
 
@@ -14,7 +15,7 @@ export interface EngineLogger {
 
 /** Everything the engine needs to turn a row in `apps` into a running container. */
 export interface DeployInput {
-  app: Pick<AppRow, 'id' | 'name' | 'image' | 'internalPort' | 'memoryMb' | 'cpuCores'>;
+  app: Pick<AppRow, 'id' | 'name' | 'image' | 'internalPort' | 'memoryMb' | 'cpuCores' | 'volumePath'>;
   env: Record<string, string>;
 }
 
@@ -72,6 +73,11 @@ export class DockerEngine {
       this.progress.set(app.id, 'create', 'active', 'Replacing any earlier container');
       await this.removeContainer(app.name, app.id);
       await ensureNetwork(this.docker, this.cfg.APPS_NETWORK);
+      if (app.volumePath) {
+        // Docker would make this on demand, but creating it here means a failed
+        // deploy still leaves the data from the last one in place.
+        await this.ensureVolume(volumeName(app.name));
+      }
 
       const spec = containerSpec({
         appId: app.id,
@@ -81,6 +87,7 @@ export class DockerEngine {
         internalPort: app.internalPort,
         memoryMb: app.memoryMb,
         cpuCores: app.cpuCores,
+        volumePath: app.volumePath,
         domain: this.cfg.BASE_DOMAIN,
         network: this.cfg.APPS_NETWORK,
         entrypoint: this.cfg.TRAEFIK_ENTRYPOINT,
@@ -128,6 +135,22 @@ export class DockerEngine {
     const container = await this.findContainer(app.name);
     if (!container) throw new Error('There is no container for this app yet. Redeploy it.');
     await this.docker.getContainer(container.Id).restart({ t: 10 });
+  }
+
+  /** Makes the app's named volume if it is not there. Existing data is untouched. */
+  async ensureVolume(name: string): Promise<void> {
+    await withTimeout('Docker', 15_000, this.docker.createVolume({ Name: name, Labels: { [MANAGED_LABEL]: 'true' } }));
+  }
+
+  /** Deletes a named volume and everything in it. Only ever called on request. */
+  async removeVolume(name: string): Promise<void> {
+    try {
+      await withTimeout('Docker', 15_000, this.docker.getVolume(name).remove());
+    } catch (error) {
+      // Already gone is the outcome we wanted anyway.
+      if ((error as { statusCode?: number }).statusCode === 404) return;
+      throw error;
+    }
   }
 
   /** Stops and deletes the container, which also removes the Traefik route. */

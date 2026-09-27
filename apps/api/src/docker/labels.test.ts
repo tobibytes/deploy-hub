@@ -35,7 +35,14 @@ describe('appLabels', () => {
 });
 
 describe('containerSpec', () => {
-  const spec = containerSpec({ ...base, image: 'nginxdemos/hello', env: { A: '1' }, memoryMb: 256, cpuCores: 0.5 });
+  const spec = containerSpec({
+    ...base,
+    image: 'nginxdemos/hello',
+    env: { A: '1' },
+    memoryMb: 256,
+    cpuCores: 0.5,
+    volumePath: null,
+  });
 
   it('never publishes a host port', () => {
     expect(spec.HostConfig?.PortBindings).toEqual({});
@@ -84,8 +91,42 @@ describe('containerSpec', () => {
     expect(spec.name).toBe(containerName('hello'));
   });
 
+  it('mounts nothing when the app keeps no data', () => {
+    expect(spec.HostConfig?.Mounts).toEqual([]);
+    expect(spec.HostConfig?.Binds).toEqual([]);
+  });
+
+  it('mounts a named volume, never a path from the host', () => {
+    const withData = containerSpec({
+      ...base,
+      image: 'x',
+      env: {},
+      memoryMb: 256,
+      cpuCores: 0.5,
+      volumePath: '/data',
+    });
+    expect(withData.HostConfig?.Mounts).toEqual([
+      { Type: 'volume', Source: 'rig-hello-data', Target: '/data', ReadOnly: false },
+    ]);
+    // Binds are what would reach the host filesystem, and stay empty.
+    expect(withData.HostConfig?.Binds).toEqual([]);
+  });
+
+  it('names the volume after the app, so two apps cannot share one', () => {
+    const other = containerSpec({
+      ...base,
+      appName: 'other',
+      image: 'x',
+      env: {},
+      memoryMb: 256,
+      cpuCores: 0.5,
+      volumePath: '/data',
+    });
+    expect((other.HostConfig?.Mounts ?? [])[0]?.Source).toBe('rig-other-data');
+  });
+
   it('rounds fractional cpu to whole nanocpus', () => {
-    const third = containerSpec({ ...base, image: 'x', env: {}, memoryMb: 100, cpuCores: 0.1 });
+    const third = containerSpec({ ...base, image: 'x', env: {}, memoryMb: 100, cpuCores: 0.1, volumePath: null });
     expect(third.HostConfig?.NanoCpus).toBe(100_000_000);
   });
 });

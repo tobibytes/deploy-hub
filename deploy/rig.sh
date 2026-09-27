@@ -10,13 +10,17 @@
 #   ./deploy/rig.sh backup          write a database dump now
 #   ./deploy/rig.sh check           confirm the settings before a first run
 #
+# Set RIG_ENV_FILE to use a different settings file.
+#
 # Running `up` again is always safe: migrations and the owner account are applied
 # only if they are needed.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-ENV_FILE="$HERE/.env"
+# Normally deploy/.env. Overridable so a laptop can run the production stack
+# for a trial without losing its development settings.
+ENV_FILE="${RIG_ENV_FILE:-$HERE/.env}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$HERE/compose.yml")
 
 # shellcheck source=../scripts/docker-check.sh

@@ -97,7 +97,7 @@ export function useAppAction(id: string) {
     restart: useMutation({ mutationFn: () => api.restart(id), onSuccess: refresh }),
     redeploy: useMutation({ mutationFn: () => api.redeploy(id), onSuccess: refresh }),
     remove: useMutation({
-      mutationFn: () => api.deleteApp(id),
+      mutationFn: (deleteData: boolean = false) => api.deleteApp(id, deleteData),
       onSuccess: () => {
         client.removeQueries({ queryKey: keys.app(id) });
         void client.invalidateQueries({ queryKey: keys.apps });

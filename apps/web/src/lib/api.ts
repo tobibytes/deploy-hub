@@ -109,7 +109,8 @@ export const api = {
   createApp: (input: CreateAppInput) => request<App>('/apps', { method: 'POST', body: JSON.stringify(input) }),
   updateApp: (id: string, input: UpdateAppInput) =>
     request<App>(`/apps/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
-  deleteApp: (id: string) => request<void>(`/apps/${id}`, { method: 'DELETE' }),
+  deleteApp: (id: string, deleteData = false) =>
+    request<void>(`/apps/${id}${deleteData ? '?deleteData=true' : ''}`, { method: 'DELETE' }),
   start: (id: string) => request<App>(`/apps/${id}/start`, { method: 'POST' }),
   stop: (id: string) => request<App>(`/apps/${id}/stop`, { method: 'POST' }),
   restart: (id: string) => request<App>(`/apps/${id}/restart`, { method: 'POST' }),
