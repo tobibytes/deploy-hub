@@ -1,0 +1,52 @@
+/* The same ground, type and shapes as the room site, so Rig looks like it
+   belongs next to tobiolajide.com. Colour carries meaning or it is absent. */
+:root {
+  color-scheme: dark;
+
+  /* ground */
+  --ink: #0d0f15;
+  --panel: #141720;
+  --panel-2: #1c2030;
+  --line: #2a2f40;
+  --text: #ecebe6;
+  --soft: #c9cbd3;
+  --muted: #8d94a6;
+
+  /* Rig's one accent: the infra teal from the room's server rack */
+  --accent: #5fd4b0;
+  --accent-ink: #0d0f15;
+
+  /* status, kept separate from the accent */
+  --ok: #4cc08a;
+  --ok-soft: #12291f;
+  --warn: #d6a53a;
+  --warn-soft: #2a2214;
+  --stop: #e0697a;
+  --stop-soft: #2d1519;
+  --idle: #8d94a6;
+  --idle-soft: #1c2030;
+
+  /* type */
+  --display: "Bricolage Grotesque", "Arial Black", system-ui, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* shape and motion */
+  --r-sm: 7px;
+  --r: 12px;
+  --r-lg: 16px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fast: 120ms;
+  --med: 220ms;
+
+  /* layout */
+  --sidebar: 220px;
+  --content: 1100px;
+  --gutter: 24px;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --gutter: 16px;
+  }
+}

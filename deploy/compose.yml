@@ -1,0 +1,192 @@
+# The whole of Rig on one host. Everything here is safe to run again: the API
+# applies its own migrations and reconciles with Docker on every boot, so
+# `docker compose up -d` is the only command needed for a first run or an update.
+#
+#   docker compose --env-file .env -f compose.yml up -d
+#
+name: rig
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # Reads Docker labels and routes each hostname to the right container. This is
+  # what makes an app's URL appear the moment Rig starts its container, and
+  # disappear the moment it is deleted.
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    depends_on:
+      docker-proxy:
+        condition: service_started
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --log.level=INFO
+      - --accesslog=false
+      - --api.dashboard=false
+      - --api.insecure=false
+      - --ping=true
+      - --entrypoints.web.address=:80
+      # Not published to the host in production, and never routed by
+      # cloudflared, so /ping is reachable from Rig and nowhere else.
+      - --entrypoints.traefik.address=:8080
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=rig_apps
+    ports:
+      # Handy on the local network. Cloudflare reaches Traefik over the tunnel,
+      # not through this port, so closing it changes nothing about the public URLs.
+      - "${TRAEFIK_HTTP_PORT:-8080}:80"
+    networks:
+      - edge
+      - web
+      - apps
+      - internal
+    logging: *logging
+
+  # The only container that touches /var/run/docker.sock. It exposes a narrow
+  # slice of the Docker API over TCP, so neither Rig nor Traefik ever holds the
+  # socket itself.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      # Rig needs to list, create, start, stop and remove containers, pull
+      # images and make its network.
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      INFO: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 1
+      # Everything else stays off.
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      EXEC: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      VOLUMES: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+    logging: *logging
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rig}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rig} -d ${POSTGRES_DB:-rig}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - internal
+    logging: *logging
+
+  rig:
+    image: ${RIG_IMAGE:-ghcr.io/tobibytes/deploy-hub:latest}
+    # Uncomment to build on the Pi instead of pulling a published image.
+    # build:
+    #   context: ..
+    #   dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      BASE_DOMAIN: ${BASE_DOMAIN:?set BASE_DOMAIN in .env}
+      RIG_HOSTNAME: ${RIG_HOSTNAME:-rig.${BASE_DOMAIN}}
+      EXTRA_RESERVED_NAMES: ${EXTRA_RESERVED_NAMES:-}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rig}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rig}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      ENV_ENCRYPTION_KEY: ${ENV_ENCRYPTION_KEY:?set ENV_ENCRYPTION_KEY in .env}
+      OWNER_EMAIL: ${OWNER_EMAIL:?set OWNER_EMAIL in .env}
+      OWNER_PASSWORD: ${OWNER_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      DOCKER_HOST_URL: http://docker-proxy:2375
+      APPS_NETWORK: rig_apps
+      TRAEFIK_ENTRYPOINT: web
+      TRAEFIK_PING_URL: http://traefik:8080/ping
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: rig_web
+      traefik.http.routers.rig.rule: Host(`${RIG_HOSTNAME:-rig.${BASE_DOMAIN}}`)
+      traefik.http.routers.rig.entrypoints: web
+      traefik.http.routers.rig.service: rig
+      traefik.http.services.rig.loadbalancer.server.port: "3001"
+    networks:
+      - internal
+      - web
+    logging: *logging
+
+  # Outbound-only connection to Cloudflare, so the home network needs no open
+  # ports and no port forwarding.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_started
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    healthcheck:
+      test: ["CMD", "cloudflared", "--version"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    networks:
+      - edge
+    logging: *logging
+
+networks:
+  # Apps live here, and Traefik is the only other thing on it. They cannot reach
+  # Postgres or the Rig API.
+  apps:
+    name: rig_apps
+    driver: bridge
+    attachable: true
+  # Traefik to the Rig container.
+  web:
+    name: rig_web
+    driver: bridge
+  # Rig to Postgres and the Docker proxy. No route out to the internet.
+  internal:
+    name: rig_internal
+    driver: bridge
+    internal: true
+  # Cloudflared to Traefik.
+  edge:
+    name: rig_edge
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: rig_postgres_data

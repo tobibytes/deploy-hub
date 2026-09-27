@@ -1,0 +1,27 @@
+# Written by scripts/dev.sh for local development. Not for the Pi.
+NODE_ENV=development
+PORT=3001
+# Development only. Loopback, so a dev instance with a known password is not
+# reachable from the rest of the network. In Compose this stays 0.0.0.0 so
+# Traefik can reach it.
+HOST=127.0.0.1
+APP_DOMAIN=tobiolajide.com
+RIG_HOSTNAME=rig.tobiolajide.com
+EXTRA_RESERVED_NAMES=dj,www
+
+DATABASE_URL=postgresql://rig:rig@127.0.0.1:5433/rig
+SESSION_SECRET=HRgpxkH98lYUuhYVDSkNjjEhP5+82tkp+3SEZB9KKhBHB6YEKrpetAtIjqWhLEcX
+ENV_ENCRYPTION_KEY=moq3nr0+FcWWoMiNYOr+GhNYuYbFxXOtNrW5iuP72jQ=
+POSTGRES_PASSWORD=rig
+
+OWNER_EMAIL=dev@localhost
+OWNER_PASSWORD=devpassword123
+
+# The dashboard is served over plain http in development.
+COOKIE_SECURE=false
+# Running on the host, so talk to the local Docker socket directly.
+DOCKER_HOST_URL=
+APPS_NETWORK=rig_apps
+TRAEFIK_PING_URL=http://127.0.0.1:8081/ping
+LOG_LEVEL=info
+DOCKER_SOCKET_PATH=/Users/oluwatobiolajide/.orbstack/run/docker.sock

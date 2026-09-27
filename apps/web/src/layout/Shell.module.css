@@ -1,0 +1,214 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.side {
+  border-right: 1px solid var(--line);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+}
+
+.markGlyph {
+  color: var(--accent);
+  flex: none;
+}
+
+.markName {
+  font: 800 20px/1 var(--display);
+  letter-spacing: -0.02em;
+}
+
+.nav {
+  display: grid;
+  gap: 2px;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--r);
+  color: var(--soft);
+  font-size: 14.5px;
+  font-weight: 500;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.navLink svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.navLink:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.navActive {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.navActive svg {
+  color: var(--accent);
+}
+
+.sideFoot {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.who {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.health {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 500 12px var(--mono);
+  color: var(--muted);
+}
+
+.healthDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--idle);
+  flex: none;
+}
+
+.healthOk {
+  background: var(--ok);
+}
+
+.healthBad {
+  background: var(--stop);
+}
+
+.main {
+  min-width: 0;
+  padding: 28px var(--gutter) 60px;
+}
+
+.inner {
+  max-width: var(--content);
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+
+.pageHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  animation: fade var(--med) var(--ease) both;
+}
+
+.pageHead p {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 13px var(--body);
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.back svg {
+  flex: none;
+  transform: rotate(180deg);
+}
+
+.back:hover {
+  color: var(--text);
+}
+
+/* ------------------------------------------------- phones: bottom tab bar */
+
+.tabbar {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .side {
+    display: none;
+  }
+
+  .main {
+    padding: 18px var(--gutter) calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: color-mix(in srgb, var(--ink) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tabbarLink {
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    padding: 7px 4px;
+    border-radius: var(--r);
+    color: var(--muted);
+    font: 500 11px var(--body);
+  }
+
+  .tabbarActive {
+    color: var(--accent);
+  }
+}
+
+@media (min-width: 861px) {
+  .topbar {
+    display: none;
+  }
+}

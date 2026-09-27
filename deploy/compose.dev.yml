@@ -1,0 +1,120 @@
+# Just the pieces that have to run in containers while you develop: Postgres,
+# Traefik and the Docker socket proxy. The API and the dashboard run on the host
+# with hot reload, and the API talks to Docker through the local socket.
+#
+#   ./scripts/dev.sh
+#
+# Apps you deploy locally are reachable through Traefik by sending the hostname:
+#   curl -H "Host: hello.tobiolajide.com" http://localhost:8080
+#
+name: rig-dev
+
+services:
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    depends_on:
+      - docker-proxy
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --log.level=INFO
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --ping=true
+      - --entrypoints.web.address=:80
+      # Not published to the host in production, and never routed by
+      # cloudflared, so /ping is reachable from Rig and nowhere else.
+      - --entrypoints.traefik.address=:8080
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://docker-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=rig_apps
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-8080}:80"
+      # Traefik's own dashboard, useful for seeing whether a route registered.
+      - "${TRAEFIK_API_PORT:-8081}:8080"
+    networks:
+      - apps
+      - internal
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      INFO: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 1
+      VOLUMES: 0
+      EXEC: 0
+      SYSTEM: 0
+      SWARM: 0
+      SECRETS: 0
+      SERVICES: 0
+      TASKS: 0
+      NODES: 0
+      PLUGINS: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      SESSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rig
+      POSTGRES_PASSWORD: rig
+      POSTGRES_DB: rig
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rig -d rig"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal
+
+  # Off unless you ask for it:  ./scripts/infra.sh tunnel
+  #
+  # Connects this laptop's Traefik to your Cloudflare tunnel, so the real
+  # hostnames resolve to what is running here. Useful before the Pi exists.
+  # Only one machine should run a given tunnel at a time: if the Pi is already
+  # running it, traffic is shared between the two and the results make no sense.
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - traefik
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?put TUNNEL_TOKEN in deploy/.env first}
+    networks:
+      - internal
+
+networks:
+  apps:
+    name: rig_apps
+    driver: bridge
+    attachable: true
+  internal:
+    name: rig_dev_internal
+    driver: bridge
+
+volumes:
+  postgres-dev-data:
+    name: rig_dev_postgres_data
